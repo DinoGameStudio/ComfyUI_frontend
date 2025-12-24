@@ -35,7 +35,6 @@
     <div v-show="activeCategory" class="rounded-lg bg-smoke-700/30">
       <SceneControls
         v-if="showSceneControls"
-        ref="sceneControlsRef"
         v-model:show-grid="sceneConfig!.showGrid"
         v-model:background-color="sceneConfig!.backgroundColor"
         v-model:background-image="sceneConfig!.backgroundImage"
@@ -46,28 +45,26 @@
 
       <ModelControls
         v-if="showModelControls"
-        ref="modelControlsRef"
         v-model:material-mode="modelConfig!.materialMode"
         v-model:up-direction="modelConfig!.upDirection"
+        :hide-material-mode="isSplatModel"
+        :is-ply-model="isPlyModel"
       />
 
       <CameraControls
         v-if="showCameraControls"
-        ref="cameraControlsRef"
         v-model:camera-type="cameraConfig!.cameraType"
         v-model:fov="cameraConfig!.fov"
       />
 
       <LightControls
         v-if="showLightControls"
-        ref="lightControlsRef"
         v-model:light-intensity="lightConfig!.intensity"
         v-model:material-mode="modelConfig!.materialMode"
       />
 
       <ExportControls
         v-if="showExportControls"
-        ref="exportControlsRef"
         @export-model="handleExportModel"
       />
     </div>
@@ -90,6 +87,11 @@ import type {
   SceneConfig
 } from '@/extensions/core/load3d/interfaces'
 
+const { isSplatModel = false, isPlyModel = false } = defineProps<{
+  isSplatModel?: boolean
+  isPlyModel?: boolean
+}>()
+
 const sceneConfig = defineModel<SceneConfig>('sceneConfig')
 const modelConfig = defineModel<ModelConfig>('modelConfig')
 const cameraConfig = defineModel<CameraConfig>('cameraConfig')
@@ -106,6 +108,10 @@ const categoryLabels: Record<string, string> = {
 }
 
 const availableCategories = computed(() => {
+  if (isSplatModel) {
+    return ['scene', 'model', 'camera']
+  }
+
   return ['scene', 'model', 'camera', 'light', 'export']
 })
 

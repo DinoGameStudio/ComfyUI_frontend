@@ -97,6 +97,7 @@
     "no": "No",
     "cancel": "Cancel",
     "close": "Close",
+    "or": "or",
     "pressKeysForNewBinding": "Press keys for new binding",
     "defaultBanner": "default banner",
     "enableOrDisablePack": "Enable or disable pack",
@@ -105,6 +106,7 @@
     "dropYourFileOr": "Drop your file or",
     "back": "Back",
     "next": "Next",
+    "submit": "Submit",
     "install": "Install",
     "installing": "Installing",
     "overwrite": "Overwrite",
@@ -123,13 +125,20 @@
     "searchKeybindings": "Search Keybindings",
     "searchExtensions": "Search Extensions",
     "search": "Search",
+    "searchPlaceholder": "Search...",
     "noResultsFound": "No Results Found",
+    "noResults": "No Results",
     "searchFailedMessage": "We couldn't find any settings matching your search. Try adjusting your search terms.",
     "noTasksFound": "No Tasks Found",
     "noTasksFoundMessage": "There are no tasks in the queue.",
     "newFolder": "New Folder",
     "enableAll": "Enable All",
     "disableAll": "Disable All",
+    "enableSelected": "Enable Selected",
+    "disableSelected": "Disable Selected",
+    "disableThirdParty": "Disable Third-Party",
+    "core": "Core",
+    "custom": "Custom",
     "command": "Command",
     "keybinding": "Keybinding",
     "upload": "Upload",
@@ -192,6 +201,15 @@
     "copy": "Copy",
     "copyJobId": "Copy Job ID",
     "copied": "Copied",
+    "relativeTime": {
+      "now": "now",
+      "yearsAgo": "{count}y ago",
+      "monthsAgo": "{count}mo ago",
+      "weeksAgo": "{count}w ago",
+      "daysAgo": "{count}d ago",
+      "hoursAgo": "{count}h ago",
+      "minutesAgo": "{count}min ago"
+    },
     "jobIdCopied": "Job ID copied to clipboard",
     "failedToCopyJobId": "Failed to copy job ID",
     "imageUrl": "Image URL",
@@ -234,6 +252,7 @@
     "frameNodes": "Frame Nodes",
     "listening": "Listening...",
     "ready": "Ready",
+    "playPause": "Play/Pause",
     "playRecording": "Play Recording",
     "playing": "Playing",
     "stopPlayback": "Stop Playback",
@@ -242,7 +261,9 @@
     "halfSpeed": "0.5x",
     "1x": "1x",
     "2x": "2x",
-    "beta": "BETA"
+    "beta": "BETA",
+    "profile": "Profile",
+    "noItems": "No items"
   },
   "manager": {
     "title": "Custom Nodes Manager",
@@ -274,6 +295,8 @@
     "uninstall": "Uninstall",
     "uninstalling": "Uninstalling {id}",
     "update": "Update",
+    "tryUpdate": "Try Update",
+    "tryUpdateTooltip": "Pull latest changes from repository. Nightly versions may have updates that cannot be detected automatically.",
     "uninstallSelected": "Uninstall Selected",
     "updateSelected": "Update Selected",
     "updateAll": "Update All",
@@ -428,7 +451,8 @@
     "Horizontal": "Horizontal",
     "Vertical": "Vertical",
     "new": "new",
-    "deprecated": "deprecated"
+    "deprecated": "deprecated",
+    "Extensions": "Extensions"
   },
   "icon": {
     "bookmark": "Bookmark",
@@ -455,6 +479,7 @@
   "notSupported": {
     "title": "Your device is not supported",
     "message": "Only following devices are supported:",
+    "illustrationAlt": "Sad girl illustration",
     "learnMore": "Learn More",
     "reportIssue": "Report Issue",
     "supportedDevices": {
@@ -610,7 +635,9 @@
   "serverConfig": {
     "modifiedConfigs": "You have modified the following server configurations. Restart to apply changes.",
     "revertChanges": "Revert Changes",
-    "restart": "Restart"
+    "restart": "Restart",
+    "restartRequiredToastSummary": "Restart required",
+    "restartRequiredToastDetail": "Restart the app to apply server configuration changes."
   },
   "shape": {
     "default": "Default",
@@ -641,7 +668,7 @@
       "filter3D": "3D"
     },
     "backToAssets": "Back to all assets",
-    "searchAssets": "Search assets...",
+    "searchAssets": "Search Assets",
     "labels": {
       "queue": "Queue",
       "nodes": "Nodes",
@@ -689,6 +716,7 @@
       "currentNode": "Current node:",
       "viewAllJobs": "View all jobs",
       "running": "running",
+      "preview": "Preview",
       "interruptAll": "Interrupt all running jobs",
       "moreOptions": "More options",
       "showAssets": "Show assets",
@@ -735,9 +763,10 @@
     }
   },
   "helpCenter": {
+    "feedback": "Give Feedback",
     "docs": "Docs",
     "github": "Github",
-    "helpFeedback": "Help & Feedback",
+    "help": "Help & Support",
     "managerExtension": "Manager Extension",
     "more": "More...",
     "whatsNew": "What's New?",
@@ -748,13 +777,20 @@
     "updateAvailable": "Update",
     "desktopUserGuide": "Desktop User Guide",
     "openDevTools": "Open Dev Tools",
-    "reinstall": "Re-Install"
+    "reinstall": "Re-Install",
+    "updateComfyUI": "Update ComfyUI",
+    "updateComfyUIStarted": "Update Started",
+    "updateComfyUIStartedDetail": "ComfyUI update has been queued. Please wait...",
+    "updateComfyUISuccess": "Update Complete",
+    "updateComfyUISuccessDetail": "ComfyUI has been updated. Rebooting...",
+    "updateComfyUIFailed": "Failed to update ComfyUI. Please try again."
   },
   "releaseToast": {
-    "newVersionAvailable": "New Version Available!",
-    "whatsNew": "What's New?",
+    "newVersionAvailable": "New update is out!",
+    "whatsNew": "See what's new",
     "skip": "Skip",
-    "update": "Update"
+    "update": "Update",
+    "description": "Check out the latest improvements and features in this update."
   },
   "menu": {
     "hideMenu": "Hide Menu",
@@ -783,6 +819,7 @@
     "dark": "Dark",
     "light": "Light",
     "manageExtensions": "Manage Extensions",
+    "customNodesManager": "Custom Nodes Manager",
     "settings": "Settings",
     "help": "Help",
     "queue": "Queue Panel"
@@ -930,6 +967,7 @@
     "thickness": "Thickness",
     "opacity": "Opacity",
     "hardness": "Hardness",
+    "stepSize": "Step Size",
     "smoothingPrecision": "Smoothing Precision",
     "resetToDefault": "Reset to Default",
     "paintBucketSettings": "Paint Bucket Settings",
@@ -978,6 +1016,7 @@
     "initializingAlmostReady": "Initializing - Almost ready",
     "inQueue": "In queue...",
     "jobAddedToQueue": "Job added to queue",
+    "completedIn": "Finished in {duration}",
     "jobMenu": {
       "openAsWorkflowNewTab": "Open as workflow in new tab",
       "openWorkflowNewTab": "Open workflow in new tab",
@@ -1028,6 +1067,18 @@
     "Edit": "Edit",
     "View": "View",
     "Help": "Help",
+    "Check for Updates": "Check for Updates",
+    "Open Custom Nodes Folder": "Open Custom Nodes Folder",
+    "Open Inputs Folder": "Open Inputs Folder",
+    "Open Logs Folder": "Open Logs Folder",
+    "Open extra_model_paths_yaml": "Open extra_model_paths.yaml",
+    "Open Models Folder": "Open Models Folder",
+    "Open Outputs Folder": "Open Outputs Folder",
+    "Open DevTools": "Open DevTools",
+    "Desktop User Guide": "Desktop User Guide",
+    "Quit": "Quit",
+    "Reinstall": "Reinstall",
+    "Restart": "Restart",
     "Open 3D Viewer (Beta) for Selected Node": "Open 3D Viewer (Beta) for Selected Node",
     "Experimental: Browse Model Assets": "Experimental: Browse Model Assets",
     "Browse Templates": "Browse Templates",
@@ -1107,7 +1158,7 @@
     "Undo": "Undo",
     "Open Sign In Dialog": "Open Sign In Dialog",
     "Sign Out": "Sign Out",
-    "Experimental: Enable Vue Nodes": "Experimental: Enable Vue Nodes",
+    "Experimental: Enable Nodes 2_0": "Experimental: Enable Nodes 2.0",
     "Close Current Workflow": "Close Current Workflow",
     "Next Opened Workflow": "Next Opened Workflow",
     "Previous Opened Workflow": "Previous Opened Workflow",
@@ -1152,7 +1203,6 @@
     "Locale": "Locale",
     "Mask Editor": "Mask Editor",
     "BrushAdjustment": "Brush Adjustment",
-    "NewEditor": "New Editor",
     "ModelLibrary": "Model Library",
     "NodeLibrary": "Node Library",
     "Node Search Box": "Node Search Box",
@@ -1183,10 +1233,13 @@
     "API Nodes": "API Nodes",
     "Notification Preferences": "Notification Preferences",
     "3DViewer": "3DViewer",
-    "Vue Nodes": "Vue Nodes",
     "Canvas Navigation": "Canvas Navigation",
     "PlanCredits": "Plan & Credits",
-    "VueNodes": "Vue Nodes"
+    "Vue Nodes": "Nodes 2.0",
+    "VueNodes": "Nodes 2.0",
+    "Nodes 2_0": "Nodes 2.0",
+    "Execution": "Execution",
+    "PLY": "PLY"
   },
   "serverConfigItems": {
     "listen": {
@@ -1293,6 +1346,10 @@
     "disable-metadata": {
       "name": "Disable saving prompt metadata in files."
     },
+    "enable-manager-legacy-ui": {
+      "name": "Use legacy Manager UI",
+      "tooltip": "Uses the legacy ComfyUI-Manager UI instead of the new UI."
+    },
     "disable-all-custom-nodes": {
       "name": "Disable loading all custom nodes."
     },
@@ -1321,6 +1378,9 @@
     "_for_testing": "_for_testing",
     "custom_sampling": "custom_sampling",
     "noise": "noise",
+    "dataset": "dataset",
+    "text": "text",
+    "image": "image",
     "sampling": "sampling",
     "schedulers": "schedulers",
     "audio": "audio",
@@ -1330,7 +1390,6 @@
     "api node": "api node",
     "video": "video",
     "ByteDance": "ByteDance",
-    "image": "image",
     "preprocessors": "preprocessors",
     "utils": "utils",
     "string": "string",
@@ -1341,6 +1400,7 @@
     "chroma_radiance": "chroma_radiance",
     "attention_experiments": "attention_experiments",
     "flux": "flux",
+    "kandinsky5": "kandinsky5",
     "hooks": "hooks",
     "combine": "combine",
     "cond single": "cond single",
@@ -1356,14 +1416,14 @@
     "latent": "latent",
     "3d": "3d",
     "ltxv": "ltxv",
+    "qwen": "qwen",
     "sd3": "sd3",
     "unet": "unet",
     "sigmas": "sigmas",
     "BFL": "BFL",
     "Gemini": "Gemini",
-    "text": "text",
-    "gligen": "gligen",
     "video_models": "video_models",
+    "gligen": "gligen",
     "sd": "sd",
     "Ideogram": "Ideogram",
     "postprocessing": "postprocessing",
@@ -1386,10 +1446,8 @@
     "Sora": "Sora",
     "cond pair": "cond pair",
     "photomaker": "photomaker",
-    "Pika": "Pika",
     "PixVerse": "PixVerse",
     "primitive": "primitive",
-    "qwen": "qwen",
     "Recraft": "Recraft",
     "edit_models": "edit_models",
     "Rodin": "Rodin",
@@ -1409,7 +1467,8 @@
     "Vidu": "Vidu",
     "": "",
     "camera": "camera",
-    "Wan": "Wan"
+    "Wan": "Wan",
+    "zimage": "zimage"
   },
   "dataTypes": {
     "*": "*",
@@ -1438,7 +1497,6 @@
     "LATENT_OPERATION": "LATENT_OPERATION",
     "LATENT_UPSCALE_MODEL": "LATENT_UPSCALE_MODEL",
     "LOAD_3D": "LOAD_3D",
-    "LOAD_3D_ANIMATION": "LOAD_3D_ANIMATION",
     "LOAD3D_CAMERA": "LOAD3D_CAMERA",
     "LORA_MODEL": "LORA_MODEL",
     "LOSS_MAP": "LOSS_MAP",
@@ -1465,6 +1523,7 @@
     "STYLE_MODEL": "STYLE_MODEL",
     "SVG": "SVG",
     "TIMESTEPS_RANGE": "TIMESTEPS_RANGE",
+    "TRACKS": "TRACKS",
     "UPSCALE_MODEL": "UPSCALE_MODEL",
     "VAE": "VAE",
     "VIDEO": "VIDEO",
@@ -1511,6 +1570,11 @@
     "frontendNewer": "Frontend version {frontendVersion} may not be compatible with backend version {backendVersion}.",
     "updateFrontend": "Update Frontend",
     "dismiss": "Dismiss"
+  },
+  "loadWorkflowWarning": {
+    "outdatedVersion": "This workflow was created with a newer version of ComfyUI ({version}). Some nodes may not work correctly.",
+    "outdatedVersionGeneric": "This workflow was created with a newer version of ComfyUI. Some nodes may not work correctly.",
+    "coreNodesFromVersion": "Core nodes from version {version}:"
   },
   "errorDialog": {
     "defaultTitle": "An error occurred",
@@ -1573,6 +1637,7 @@
       "normal": "Normal",
       "wireframe": "Wireframe",
       "original": "Original",
+      "pointCloud": "Point Cloud",
       "depth": "Depth",
       "lineart": "Lineart"
     },
@@ -1634,6 +1699,7 @@
     "noTemplatesToExport": "No templates to export",
     "failedToFetchLogs": "Failed to fetch server logs",
     "migrateToLitegraphReroute": "Reroute nodes will be removed in future versions. Click to migrate to litegraph-native reroute.",
+    "legacyMaskEditorDeprecated": "The legacy mask editor is deprecated and will be removed soon.",
     "userNotAuthenticated": "User not authenticated",
     "failedToFetchBalance": "Failed to fetch balance: {error}",
     "failedToCreateCustomer": "Failed to create customer: {error}",
@@ -1818,24 +1884,42 @@
       "maxAmount": "(Max. $1,000 USD)",
       "buyNow": "Buy now",
       "seeDetails": "See details",
-      "topUp": "Top Up"
+      "topUp": "Top Up",
+      "addMoreCredits": "Add more credits",
+      "addMoreCreditsToRun": "Add more credits to run",
+      "insufficientWorkflowMessage": "You don't have enough credits to run this workflow.",
+      "creditsDescription": "Credits are used to run workflows or partner nodes.",
+      "howManyCredits": "How many credits would you like to add?",
+      "videosEstimate": "~{count} videos*",
+      "templateNote": "*Generated with Wan Fun Control template",
+      "buy": "Buy",
+      "purchaseError": "Purchase Failed",
+      "purchaseErrorDetail": "Failed to purchase credits: {error}",
+      "unknownError": "An unknown error occurred"
     },
+    "creditsAvailable": "Credits available",
+    "refreshes": "Refreshes {date}",
     "eventType": "Event Type",
     "details": "Details",
     "time": "Time",
     "additionalInfo": "Additional Info",
     "model": "Model",
     "added": "Added",
-    "accountInitialized": "Account initialized"
+    "accountInitialized": "Account initialized",
+    "unified": {
+      "message": "Credits have been unified",
+      "tooltip": "We've unified payments across Comfy. Everything now runs on Comfy Credits:\n- Partner Nodes (formerly API nodes)\n- Cloud workflows\n\nYour existing Partner node balance has been converted into credits."
+    }
   },
   "subscription": {
     "title": "Subscription",
     "titleUnsubscribed": "Subscribe to Comfy Cloud",
     "comfyCloud": "Comfy Cloud",
+    "comfyCloudLogo": "Comfy Cloud Logo",
     "beta": "BETA",
-    "perMonth": "USD / month",
+    "perMonth": "/ month",
+    "usdPerMonth": "USD / mo",
     "renewsDate": "Renews {date}",
-    "refreshesOn": "Refreshes to ${monthlyCreditBonusUsd} on {date}",
     "expiresDate": "Expires {date}",
     "manageSubscription": "Manage subscription",
     "partnerNodesBalance": "\"Partner Nodes\" Credit Balance",
@@ -1848,15 +1932,40 @@
     "monthlyBonusDescription": "Monthly credit bonus",
     "prepaidDescription": "Pre-paid credits",
     "prepaidCreditsInfo": "Pre-paid credits expire after 1 year from purchase date.",
+    "creditsRemainingThisMonth": "Credits remaining this month",
+    "creditsRemainingThisYear": "Credits remaining this year",
+    "creditsYouveAdded": "Credits you've added",
+    "monthlyCreditsInfo": "These credits refresh monthly and don't roll over",
+    "viewMoreDetailsPlans": "View more details about plans & pricing",
     "nextBillingCycle": "next billing cycle",
     "yourPlanIncludes": "Your plan includes:",
     "viewMoreDetails": "View more details",
     "learnMore": "Learn more",
+    "billedMonthly": "Billed monthly",
+    "billedYearly": "{total} Billed yearly",
+    "monthly": "Monthly",
+    "yearly": "Yearly",
+    "tierNameYearly": "{name} Yearly",
     "messageSupport": "Message support",
     "invoiceHistory": "Invoice history",
     "benefits": {
       "benefit1": "$10 in monthly credits for Partner Nodes — top up when needed",
       "benefit2": "Up to 30 min runtime per job"
+    },
+    "yearlyDiscount": "20% DISCOUNT",
+    "tiers": {
+      "founder": {
+        "name": "Founder's Edition"
+      },
+      "standard": {
+        "name": "Standard"
+      },
+      "creator": {
+        "name": "Creator"
+      },
+      "pro": {
+        "name": "Pro"
+      }
     },
     "required": {
       "title": "Subscribe to",
@@ -1867,10 +1976,40 @@
     "subscribeToRunFull": "Subscribe to Run",
     "subscribeNow": "Subscribe Now",
     "subscribeToComfyCloud": "Subscribe to Comfy Cloud",
-    "partnerNodesCredits": "Partner Nodes pricing table"
+    "description": "Choose the best plan for you",
+    "haveQuestions": "Have questions or wondering about enterprise?",
+    "contactUs": "Contact us",
+    "viewEnterprise": "View enterprise",
+    "partnerNodesCredits": "Partner nodes pricing",
+    "plansAndPricing": "Plans & pricing",
+    "managePlan": "Manage plan",
+    "upgrade": "UPGRADE",
+    "mostPopular": "Most popular",
+    "currentPlan": "Current Plan",
+    "subscribeTo": "Subscribe to {plan}",
+    "monthlyCreditsLabel": "Monthly credits",
+    "yearlyCreditsLabel": "Total yearly credits",
+    "maxDurationLabel": "Max duration of each workflow run",
+    "gpuLabel": "RTX 6000 Pro (96GB VRAM)",
+    "addCreditsLabel": "Add more credits whenever",
+    "customLoRAsLabel": "Import your own LoRAs",
+    "videoEstimateLabel": "Number of 5s videos generated with Wan Fun Control template",
+    "videoEstimateHelp": "What is this?",
+    "videoEstimateExplanation": "These estimates are based on the Wan Fun Control template for 5-second videos.",
+    "videoEstimateTryTemplate": "Try the Wan Fun Control template →",
+    "upgradePlan": "Upgrade Plan",
+    "upgradeTo": "Upgrade to {plan}",
+    "changeTo": "Change to {plan}",
+    "maxDuration": {
+      "standard": "30 min",
+      "creator": "30 min",
+      "pro": "1 hr",
+      "founder": "30 min"
+    }
   },
   "userSettings": {
-    "title": "User Settings",
+    "title": "My Account Settings",
+    "accountSettings": "Account settings",
     "name": "Name",
     "email": "Email",
     "provider": "Sign-in Provider",
@@ -1895,6 +2034,26 @@
       "placeholderVideo": "Select video...",
       "placeholderModel": "Select model...",
       "placeholderUnknown": "Select media..."
+    },
+    "valueControl": {
+      "header": {
+        "prefix": "Automatically update the value",
+        "after": "AFTER",
+        "before": "BEFORE",
+        "postfix": "running the workflow:"
+      },
+      "linkToGlobal": "Link to",
+      "linkToGlobalSeed": "Global Value",
+      "linkToGlobalDesc": "Unique value linked to the Global Value's control setting",
+      "randomize": "Randomize Value",
+      "randomizeDesc": "Shuffles the value randomly after each generation",
+      "increment": "Increment Value",
+      "incrementDesc": "Adds 1 to value or selects the next option",
+      "decrement": "Decrement Value",
+      "decrementDesc": "Subtracts 1 from value or selects the previous option",
+      "fixed": "Fixed Value",
+      "fixedDesc": "Leaves value unchanged",
+      "editSettings": "Edit control settings"
     }
   },
   "widgetFileUpload": {
@@ -1911,6 +2070,7 @@
   },
   "whatsNewPopup": {
     "learnMore": "Learn more",
+    "later": "Later",
     "noReleaseNotes": "No release notes available."
   },
   "breadcrumbsMenu": {
@@ -2066,64 +2226,91 @@
   "cloudSurvey_steps_industry": "What's your primary industry?",
   "cloudSurvey_steps_making": "What do you plan on making?",
   "assetBrowser": {
-    "assets": "Assets",
-    "checkpoints": "Checkpoints",
-    "browseAssets": "Browse Assets",
-    "noAssetsFound": "No assets found",
-    "tryAdjustingFilters": "Try adjusting your search or filters",
-    "loadingModels": "Loading {type}...",
-    "connectionError": "Please check your connection and try again",
-    "failedToCreateNode": "Failed to create node. Please try again or check console for details.",
-    "noModelsInFolder": "No {type} available in this folder",
-    "searchAssetsPlaceholder": "Type to search...",
-    "uploadModel": "Import model",
-    "uploadModelFromCivitai": "Import a model from Civitai",
-    "uploadModelFailedToRetrieveMetadata": "Failed to retrieve metadata. Please check the link and try again.",
-    "onlyCivitaiUrlsSupported": "Only Civitai URLs are supported",
-    "uploadModelDescription1": "Paste a Civitai model download link to add it to your library.",
-    "uploadModelDescription2": "Only links from https://civitai.com are supported at the moment",
-    "uploadModelDescription3": "Max file size: 1 GB",
-    "civitaiLinkLabel": "Civitai model download link",
-    "civitaiLinkPlaceholder": "Paste link here",
-    "civitaiLinkExample": "Example: https://civitai.com/api/download/models/833921?type=Model&format=SafeTensor",
-    "confirmModelDetails": "Confirm Model Details",
-    "fileName": "File Name",
-    "fileSize": "File Size",
-    "modelName": "Model Name",
-    "modelNamePlaceholder": "Enter a name for this model",
-    "tags": "Tags",
-    "tagsPlaceholder": "e.g., models, checkpoint",
-    "tagsHelp": "Separate tags with commas",
-    "upload": "Import",
-    "uploadingModel": "Importing model...",
-    "uploadSuccess": "Model imported successfully!",
-    "uploadFailed": "Import failed",
-    "modelAssociatedWithLink": "The model associated with the link you provided:",
-    "modelTypeSelectorLabel": "What type of model is this?",
-    "modelTypeSelectorPlaceholder": "Select model type",
-    "selectModelType": "Select model type",
-    "notSureLeaveAsIs": "Not sure? Just leave this as is",
-    "modelUploaded": "Model imported! 🎉",
-    "findInLibrary": "Find it in the {type} section of the models library.",
-    "finish": "Finish",
-    "allModels": "All Models",
     "allCategory": "All {category}",
-    "unknown": "Unknown",
-    "fileFormats": "File formats",
+    "allModels": "All Models",
+    "assetCollection": "Asset collection",
+    "assets": "Assets",
     "baseModels": "Base models",
-    "filterBy": "Filter by",
-    "sortBy": "Sort by",
-    "sortAZ": "A-Z",
-    "sortZA": "Z-A",
-    "sortRecent": "Recent",
-    "sortPopular": "Popular",
+    "browseAssets": "Browse Assets",
+    "checkpoints": "Checkpoints",
+    "civitaiLinkExample": "{example} {link}",
+    "civitaiLinkExampleStrong": "Example:",
+    "civitaiLinkExampleUrl": "https://civitai.com/models/10706/luisap-z-image-and-qwen-pixel-art-refiner?modelVersionId=2225295",
+    "civitaiLinkLabel": "Civitai model {download} link",
+    "civitaiLinkLabelDownload": "download",
+    "civitaiLinkPlaceholder": "Paste link here",
+    "confirmModelDetails": "Confirm Model Details",
+    "connectionError": "Please check your connection and try again",
     "errorFileTooLarge": "File exceeds the maximum allowed size limit",
     "errorFormatNotAllowed": "Only SafeTensor format is allowed",
-    "errorUnsafePickleScan": "CivitAI detected potentially unsafe code in this file",
-    "errorUnsafeVirusScan": "CivitAI detected malware or suspicious content in this file",
     "errorModelTypeNotSupported": "This model type is not supported",
     "errorUnknown": "An unexpected error occurred",
+    "errorUnsafePickleScan": "CivitAI detected potentially unsafe code in this file",
+    "errorUnsafeVirusScan": "CivitAI detected malware or suspicious content in this file",
     "errorUploadFailed": "Failed to import asset. Please try again.",
+    "failedToCreateNode": "Failed to create node. Please try again or check console for details.",
+    "fileFormats": "File formats",
+    "fileName": "File Name",
+    "fileSize": "File Size",
+    "filterBy": "Filter by",
+    "findInLibrary": "Find it in the {type} section of the models library.",
+    "finish": "Finish",
+    "genericLinkPlaceholder": "Paste link here",
+    "jobId": "Job ID",
+    "loadingModels": "Loading {type}...",
+    "maxFileSize": "Max file size: {size}",
+    "maxFileSizeValue": "1 GB",
+    "modelAssociatedWithLink": "The model associated with the link you provided:",
+    "modelName": "Model Name",
+    "modelNamePlaceholder": "Enter a name for this model",
+    "modelTypeSelectorLabel": "What type of model is this?",
+    "modelTypeSelectorPlaceholder": "Select model type",
+    "modelUploaded": "Model successfully imported.",
+    "noAssetsFound": "No assets found",
+    "noModelsInFolder": "No {type} available in this folder",
+    "notSureLeaveAsIs": "Not sure? Just leave this as is",
+    "onlyCivitaiUrlsSupported": "Only Civitai URLs are supported",
+    "ownership": "Ownership",
+    "ownershipAll": "All",
+    "ownershipMyModels": "My models",
+    "ownershipPublicModels": "Public models",
+    "providerCivitai": "Civitai",
+    "providerHuggingFace": "Hugging Face",
+    "noValidSourceDetected": "No valid import source detected",
+    "selectFrameworks": "Select Frameworks",
+    "selectModelType": "Select model type",
+    "selectProjects": "Select Projects",
+    "sortAZ": "A-Z",
+    "sortBy": "Sort by",
+    "sortingType": "Sorting Type",
+    "sortPopular": "Popular",
+    "sortRecent": "Recent",
+    "sortZA": "Z-A",
+    "tags": "Tags",
+    "tagsHelp": "Separate tags with commas",
+    "tagsPlaceholder": "e.g., models, checkpoint",
+    "tryAdjustingFilters": "Try adjusting your search or filters",
+    "unknown": "Unknown",
+    "unsupportedUrlSource": "Only URLs from {sources} are supported",
+    "upgradeFeatureDescription": "This feature is only available with Creator or Pro plans.",
+    "upgradeToUnlockFeature": "Upgrade to unlock this feature",
+    "upload": "Import",
+    "uploadFailed": "Import failed",
+    "uploadingModel": "Importing model...",
+    "uploadModel": "Import",
+    "uploadModelDescription1": "Paste a Civitai model download link to add it to your library.",
+    "uploadModelDescription1Generic": "Paste a model download link to add it to your library.",
+    "uploadModelDescription2": "Only links from {link} are supported at the moment",
+    "uploadModelDescription2Link": "https://civitai.com/models",
+    "uploadModelDescription2Generic": "Only URLs from the following providers are supported:",
+    "uploadModelDescription3": "Max file size: {size}",
+    "uploadModelFailedToRetrieveMetadata": "Failed to retrieve metadata. Please check the link and try again.",
+    "uploadModelFromCivitai": "Import a model from Civitai",
+    "uploadModelGeneric": "Import a model",
+    "uploadModelHelpFooterText": "Need help finding the URLs? Click on a provider below to see a how-to video.",
+    "uploadModelHelpVideo": "Upload Model Help Video",
+    "uploadModelHowDoIFindThis": "How do I find this?",
+    "uploadSuccess": "Model imported successfully!",
     "ariaLabel": {
       "assetCard": "{name} - {type} asset",
       "loadingAsset": "Loading asset"
@@ -2131,6 +2318,16 @@
     "media": {
       "threeDModelPlaceholder": "3D Model",
       "audioPlaceholder": "Audio"
+    },
+    "deletion": {
+      "header": "Delete this model?",
+      "body": "This model will be permanently removed from your library.",
+      "inProgress": "Deleting {assetName}...",
+      "complete": "{assetName} has been deleted.",
+      "failed": "{assetName} could not be deleted."
+    },
+    "rename": {
+      "failed": "Could not rename asset."
     }
   },
   "mediaAsset": {
@@ -2142,9 +2339,15 @@
     "deletingImportedFilesCloudOnly": "Deleting imported files is only supported in cloud version",
     "failedToDeleteAsset": "Failed to delete asset",
     "actions": {
-      "inspect": "Inspect",
+      "inspect": "Inspect asset",
       "more": "More options",
-      "seeMoreOutputs": "See more outputs"
+      "seeMoreOutputs": "See more outputs",
+      "addToWorkflow": "Add to current workflow",
+      "download": "Download",
+      "openWorkflow": "Open as workflow in new tab",
+      "exportWorkflow": "Export workflow",
+      "copyJobId": "Copy job ID",
+      "delete": "Delete"
     },
     "jobIdToast": {
       "jobIdCopied": "Job ID copied to clipboard",
@@ -2188,7 +2391,8 @@
     }
   },
   "vueNodesBanner": {
-    "message": "Introducing Nodes 2.0 – More flexible workflows, powerful new widgets, built for extensibility",
+    "title": "Introducing Nodes 2.0",
+    "desc": "– More flexible workflows, powerful new widgets, built for extensibility",
     "tryItOut": "Try it out"
   },
   "vueNodesMigration": {
@@ -2197,6 +2401,10 @@
   },
   "vueNodesMigrationMainMenu": {
     "message": "Switch back to Nodes 2.0 anytime from the main menu."
+  },
+  "linearMode": {
+    "share": "Share",
+    "openWorkflow": "Open Workflow"
   },
   "missingNodes": {
     "cloud": {
@@ -2212,5 +2420,27 @@
       "description": "This workflow uses custom nodes you haven't installed yet.",
       "replacementInstruction": "Install these nodes to run this workflow, or replace them with installed alternatives. Missing nodes are highlighted in red on the canvas."
     }
+  },
+  "rightSidePanel": {
+    "togglePanel": "Toggle properties panel",
+    "noSelection": "Select a node to see its properties and info.",
+    "title": "No node(s) selected | 1 node selected | {count} nodes selected",
+    "parameters": "Parameters",
+    "info": "Info",
+    "color": "Node color",
+    "pinned": "Pinned",
+    "bypass": "Bypass",
+    "normal": "Normal",
+    "mute": "Mute",
+    "inputs": "INPUTS",
+    "inputsNone": "NO INPUTS",
+    "inputsNoneTooltip": "Node has no inputs",
+    "properties": "Properties",
+    "nodeState": "Node state",
+    "settings": "Settings"
+  },
+  "help": {
+    "recentReleases": "Recent releases",
+    "helpCenterMenu": "Help Center Menu"
   }
 }

@@ -21,7 +21,7 @@
       class="icon-[lucide--triangle-alert] text-warning-background"
     />
     <span class="p-breadcrumb-item-label px-2">{{ item.label }}</span>
-    <Tag v-if="item.isBlueprint" :value="'Blueprint'" severity="primary" />
+    <Tag v-if="item.isBlueprint" value="Blueprint" severity="primary" />
     <i v-if="isActive" class="pi pi-angle-down text-[10px]"></i>
   </a>
   <Menu
@@ -64,11 +64,13 @@ import {
   ComfyWorkflow,
   useWorkflowStore
 } from '@/platform/workflow/management/stores/workflowStore'
+import { app } from '@/scripts/app'
 import { useDialogService } from '@/services/dialogService'
 import { useCommandStore } from '@/stores/commandStore'
+import { useNodeDefStore } from '@/stores/nodeDefStore'
 import { useSubgraphNavigationStore } from '@/stores/subgraphNavigationStore'
 import { appendJsonExt } from '@/utils/formatUtil'
-import { useMissingNodes } from '@/workbench/extensions/manager/composables/nodePack/useMissingNodes'
+import { graphHasMissingNodes } from '@/workbench/extensions/manager/utils/graphHasMissingNodes'
 
 interface Props {
   item: MenuItem
@@ -79,7 +81,10 @@ const props = withDefaults(defineProps<Props>(), {
   isActive: false
 })
 
-const { hasMissingNodes } = useMissingNodes()
+const nodeDefStore = useNodeDefStore()
+const hasMissingNodes = computed(() =>
+  graphHasMissingNodes(app.rootGraph, nodeDefStore.nodeDefsByName)
+)
 
 const { t } = useI18n()
 const menu = ref<InstanceType<typeof Menu> & MenuState>()

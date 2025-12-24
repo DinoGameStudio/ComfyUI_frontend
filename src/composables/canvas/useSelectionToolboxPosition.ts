@@ -1,5 +1,5 @@
 import { useElementBounding, useRafFn } from '@vueuse/core'
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch, watchEffect } from 'vue'
 import type { Ref } from 'vue'
 
 import { useSelectedLiteGraphItems } from '@/composables/canvas/useSelectedLiteGraphItems'
@@ -21,10 +21,10 @@ import { computeUnionBounds } from '@/utils/mathUtil'
  */
 
 // Shared signals for auxiliary UI (e.g., MoreOptions) to coordinate hide/restore
-export const moreOptionsOpen = ref(false)
-export const forceCloseMoreOptionsSignal = ref(0)
-export const restoreMoreOptionsSignal = ref(0)
-export const moreOptionsRestorePending = ref(false)
+const moreOptionsOpen = ref(false)
+const forceCloseMoreOptionsSignal = ref(0)
+const restoreMoreOptionsSignal = ref(0)
+const moreOptionsRestorePending = ref(false)
 let moreOptionsWasOpenBeforeDrag = false
 let moreOptionsSelectionSignature: string | null = null
 
@@ -157,6 +157,14 @@ export function useSelectionToolboxPosition(
   // Sync with canvas transform
   const { resume: startSync, pause: stopSync } = useRafFn(updateTransform)
 
+  watchEffect(() => {
+    if (visible.value) {
+      startSync()
+    } else {
+      stopSync()
+    }
+  })
+
   // Watch for selection changes
   watch(
     () => canvasStore.getCanvas().state.selectionChanged,
@@ -173,11 +181,6 @@ export function useSelectionToolboxPosition(
         }
         updateSelectionBounds()
         canvasStore.getCanvas().state.selectionChanged = false
-        if (visible.value) {
-          startSync()
-        } else {
-          stopSync()
-        }
       }
     },
     { immediate: true }

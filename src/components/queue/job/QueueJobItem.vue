@@ -67,7 +67,7 @@
         />
       </div>
 
-      <div class="relative z-[1] flex items-center gap-1">
+      <div class="relative z-1 flex items-center gap-1">
         <div class="relative inline-flex items-center justify-center">
           <div
             class="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2"
@@ -82,18 +82,38 @@
               :src="iconImageUrl"
               class="h-full w-full object-cover"
             />
-            <i v-else :class="[iconClass, 'size-4']" />
+            <i
+              v-else
+              :class="cn(iconClass, 'size-4', shouldSpin && 'animate-spin')"
+            />
           </div>
         </div>
       </div>
 
-      <div class="relative z-[1] min-w-0 flex-1">
+      <div class="relative z-1 min-w-0 flex-1">
         <div class="truncate opacity-90" :title="props.title">
           <slot name="primary">{{ props.title }}</slot>
         </div>
       </div>
 
-      <div class="relative z-[1] flex items-center gap-2 text-text-secondary">
+      <!--
+        TODO: Refactor action buttons to use a declarative config system.
+
+        Instead of hardcoding button visibility logic in the template, define an array of
+        action button configs with properties like:
+        - icon, label, action, tooltip
+        - visibleStates: JobState[] (which job states show this button)
+        - alwaysVisible: boolean (show without hover)
+        - destructive: boolean (use destructive styling)
+
+        Then render buttons in two groups:
+        1. Always-visible buttons (outside Transition)
+        2. Hover-only buttons (inside Transition)
+
+        This would eliminate the current duplication where the cancel button exists
+        both outside (for running) and inside (for pending) the Transition.
+      -->
+      <div class="relative z-1 flex items-center gap-2 text-text-secondary">
         <Transition
           mode="out-in"
           enter-active-class="transition-opacity transition-transform duration-150 ease-out"
@@ -108,52 +128,67 @@
             key="actions"
             class="inline-flex items-center gap-2 pr-1"
           >
-            <IconButton
+            <Button
               v-if="props.state === 'failed' && computedShowClear"
               v-tooltip.top="deleteTooltipConfig"
-              type="transparent"
-              size="sm"
-              class="h-6 transform gap-1 rounded bg-modal-card-button-surface px-1 py-0 text-text-primary transition duration-150 ease-in-out hover:-translate-y-px hover:bg-destructive-background hover:opacity-95"
+              variant="destructive"
+              size="icon"
               :aria-label="t('g.delete')"
-              @click.stop="emit('delete')"
+              @click.stop="onDeleteClick"
             >
               <i class="icon-[lucide--trash-2] size-4" />
-            </IconButton>
-            <IconButton
-              v-else-if="props.state !== 'completed' && computedShowClear"
+            </Button>
+            <Button
+              v-else-if="
+                props.state !== 'completed' &&
+                props.state !== 'running' &&
+                computedShowClear
+              "
               v-tooltip.top="cancelTooltipConfig"
-              type="transparent"
-              size="sm"
-              class="h-6 transform gap-1 rounded bg-modal-card-button-surface px-1 py-0 text-text-primary transition duration-150 ease-in-out hover:-translate-y-px hover:bg-destructive-background hover:opacity-95"
+              variant="destructive"
+              size="icon"
               :aria-label="t('g.cancel')"
-              @click.stop="emit('cancel')"
+              @click.stop="onCancelClick"
             >
               <i class="icon-[lucide--x] size-4" />
-            </IconButton>
-            <TextButton
+            </Button>
+            <Button
               v-else-if="props.state === 'completed'"
-              class="h-6 transform gap-1 rounded bg-modal-card-button-surface px-2 py-0 text-text-primary transition duration-150 ease-in-out hover:-translate-y-px hover:opacity-95"
-              type="transparent"
-              :label="t('menuLabels.View')"
-              :aria-label="t('menuLabels.View')"
+              variant="textonly"
+              size="sm"
               @click.stop="emit('view')"
-            />
-            <IconButton
+              >{{ t('menuLabels.View') }}</Button
+            >
+            <Button
               v-if="props.showMenu !== undefined ? props.showMenu : true"
               v-tooltip.top="moreTooltipConfig"
-              type="transparent"
-              size="sm"
-              class="h-6 transform gap-1 rounded bg-modal-card-button-surface px-1 py-0 text-text-primary transition duration-150 ease-in-out hover:-translate-y-px hover:opacity-95"
+              variant="textonly"
+              size="icon-sm"
               :aria-label="t('g.more')"
               @click.stop="emit('menu', $event)"
             >
               <i class="icon-[lucide--more-horizontal] size-4" />
-            </IconButton>
+            </Button>
           </div>
-          <div v-else key="secondary" class="pr-2">
+          <div
+            v-else-if="props.state !== 'running'"
+            key="secondary"
+            class="pr-2"
+          >
             <slot name="secondary">{{ props.rightText }}</slot>
           </div>
         </Transition>
+        <!-- Running job cancel button - always visible -->
+        <Button
+          v-if="props.state === 'running' && computedShowClear"
+          v-tooltip.top="cancelTooltipConfig"
+          variant="destructive"
+          size="icon"
+          :aria-label="t('g.cancel')"
+          @click.stop="onCancelClick"
+        >
+          <i class="icon-[lucide--x] size-4" />
+        </Button>
       </div>
     </div>
   </div>
@@ -163,13 +198,13 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import IconButton from '@/components/button/IconButton.vue'
-import TextButton from '@/components/button/TextButton.vue'
 import JobDetailsPopover from '@/components/queue/job/JobDetailsPopover.vue'
 import QueueAssetPreview from '@/components/queue/job/QueueAssetPreview.vue'
+import Button from '@/components/ui/button/Button.vue'
 import { buildTooltipConfig } from '@/composables/useTooltipConfig'
 import type { JobState } from '@/types/queue'
 import { iconForJobState } from '@/utils/queueDisplay'
+import { cn } from '@/utils/tailwindUtil'
 
 const props = withDefaults(
   defineProps<{
@@ -184,7 +219,6 @@ const props = withDefaults(
     showMenu?: boolean
     progressTotalPercent?: number
     progressCurrentPercent?: number
-    runningNodeName?: string
     activeDetailsId?: string | null
   }>(),
   {
@@ -302,10 +336,29 @@ const iconClass = computed(() => {
   return iconForJobState(props.state)
 })
 
+const shouldSpin = computed(
+  () =>
+    props.state === 'pending' &&
+    iconClass.value === iconForJobState('pending') &&
+    !props.iconImageUrl
+)
+
 const computedShowClear = computed(() => {
   if (props.showClear !== undefined) return props.showClear
   return props.state !== 'completed'
 })
+
+const emitDetailsLeave = () => emit('details-leave', props.jobId)
+
+const onCancelClick = () => {
+  emitDetailsLeave()
+  emit('cancel')
+}
+
+const onDeleteClick = () => {
+  emitDetailsLeave()
+  emit('delete')
+}
 
 const onContextMenu = (event: MouseEvent) => {
   const shouldShowMenu = props.showMenu !== undefined ? props.showMenu : true

@@ -75,7 +75,7 @@
 
 <script setup lang="ts">
 import Button from 'primevue/button'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 
 import { useMinimap } from '@/renderer/extensions/minimap/composables/useMinimap'
 import { useCommandStore } from '@/stores/commandStore'
@@ -83,14 +83,13 @@ import { useCommandStore } from '@/stores/commandStore'
 import MiniMapPanel from './MiniMapPanel.vue'
 
 const commandStore = useCommandStore()
-
 const minimapRef = ref<HTMLDivElement>()
+const containerRef = useTemplateRef<HTMLDivElement>('containerRef')
+const canvasRef = useTemplateRef<HTMLCanvasElement>('canvasRef')
 
 const {
   initialized,
   visible,
-  containerRef,
-  canvasRef,
   containerStyles,
   viewportStyles,
   width,
@@ -109,7 +108,10 @@ const {
   handlePointerCancel,
   handleWheel,
   setMinimapRef
-} = useMinimap()
+} = useMinimap({
+  containerRefMaybe: containerRef,
+  canvasRefMaybe: canvasRef
+})
 
 const showOptionsPanel = ref(false)
 

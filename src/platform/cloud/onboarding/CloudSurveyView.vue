@@ -44,7 +44,7 @@
           <div class="flex justify-between pt-4">
             <span />
             <Button
-              label="Next"
+              :label="$t('g.next')"
               :disabled="!validStep1"
               class="h-10 w-full border-none text-white"
               @click="goTo(2, activateCallback)"
@@ -84,20 +84,22 @@
               <InputText
                 v-model="surveyData.useCaseOther"
                 class="w-full"
-                placeholder="Please specify"
+                :placeholder="
+                  $t('cloudOnboarding.survey.options.industry.otherPlaceholder')
+                "
               />
             </div>
           </div>
 
           <div class="flex gap-6 pt-4">
             <Button
-              label="Back"
+              :label="$t('g.back')"
               severity="secondary"
               class="flex-1 text-white"
               @click="goTo(1, activateCallback)"
             />
             <Button
-              label="Next"
+              :label="$t('g.next')"
               :disabled="!validStep2"
               class="h-10 flex-1 text-white"
               @click="goTo(3, activateCallback)"
@@ -137,20 +139,22 @@
               <InputText
                 v-model="surveyData.industryOther"
                 class="w-full"
-                placeholder="Please specify"
+                :placeholder="
+                  $t('cloudOnboarding.survey.options.industry.otherPlaceholder')
+                "
               />
             </div>
           </div>
 
           <div class="flex gap-6 pt-4">
             <Button
-              label="Back"
+              :label="$t('g.back')"
               severity="secondary"
               class="flex-1 text-white"
               @click="goTo(2, activateCallback)"
             />
             <Button
-              label="Next"
+              :label="$t('g.next')"
               :disabled="!validStep3"
               class="h-10 flex-1 border-none text-white"
               @click="goTo(4, activateCallback)"
@@ -189,13 +193,13 @@
 
           <div class="flex gap-6 pt-4">
             <Button
-              label="Back"
+              :label="$t('g.back')"
               severity="secondary"
               class="flex-1 text-white"
               @click="goTo(3, activateCallback)"
             />
             <Button
-              label="Submit"
+              :label="$t('g.submit')"
               :disabled="!validStep4 || isSubmitting"
               :loading="isSubmitting"
               class="h-10 flex-1 border-none text-white"
@@ -221,6 +225,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
+import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import {
   getSurveyCompletedStatus,
   submitSurvey
@@ -230,14 +235,20 @@ import { useTelemetry } from '@/platform/telemetry'
 
 const { t } = useI18n()
 const router = useRouter()
+const { flags } = useFeatureFlags()
+const onboardingSurveyEnabled = computed(() => flags.onboardingSurveyEnabled)
 
 // Check if survey is already completed on mount
 onMounted(async () => {
+  if (!onboardingSurveyEnabled.value) {
+    await router.replace({ name: 'cloud-user-check' })
+    return
+  }
   try {
     const surveyCompleted = await getSurveyCompletedStatus()
     if (surveyCompleted) {
-      // User already completed survey, redirect to waitlist
-      await router.replace({ name: 'cloud-waitlist' })
+      // User already completed survey, return to onboarding flow
+      await router.replace({ name: 'cloud-user-check' })
     } else {
       // Track survey opened event
       if (isCloud) {
@@ -338,6 +349,10 @@ const goTo = (step: number, activate: (val: string | number) => void) => {
 // Submit
 const onSubmitSurvey = async () => {
   try {
+    if (!onboardingSurveyEnabled.value) {
+      await router.replace({ name: 'cloud-user-check' })
+      return
+    }
     isSubmitting.value = true
     // prepare payload with consistent structure
     const payload = {

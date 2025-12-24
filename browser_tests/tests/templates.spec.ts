@@ -109,13 +109,13 @@ test.describe('Templates', () => {
   })
 
   test('Uses proper locale files for templates', async ({ comfyPage }) => {
-    // Set locale to French before opening templates
-    await comfyPage.setSetting('Comfy.Locale', 'fr')
-
     // Load the templates dialog and wait for the French index file request
     const requestPromise = comfyPage.page.waitForRequest(
       '**/templates/index.fr.json'
     )
+
+    // Set locale to French before opening templates
+    await comfyPage.setSetting('Comfy.Locale', 'fr')
 
     await comfyPage.executeCommand('Comfy.BrowseTemplates')
 
@@ -170,9 +170,7 @@ test.describe('Templates', () => {
 
     // Verify English titles are shown as fallback
     await expect(
-      comfyPage.templates.content.getByRole('heading', {
-        name: 'Image Generation'
-      })
+      comfyPage.page.getByRole('main').getByText('All Templates')
     ).toBeVisible()
   })
 
@@ -190,22 +188,19 @@ test.describe('Templates', () => {
       .locator('header')
       .filter({ hasText: 'Templates' })
 
-    const cardCount = await comfyPage.page
-      .locator('[data-testid^="template-workflow-"]')
-      .count()
-    expect(cardCount).toBeGreaterThan(0)
+    await comfyPage.templates.waitForMinimumCardCount(1)
     await expect(templateGrid).toBeVisible()
     await expect(nav).toBeVisible() // Nav should be visible at desktop size
 
     const mobileSize = { width: 640, height: 800 }
     await comfyPage.page.setViewportSize(mobileSize)
-    expect(cardCount).toBeGreaterThan(0)
+    await comfyPage.templates.waitForMinimumCardCount(1)
     await expect(templateGrid).toBeVisible()
     await expect(nav).not.toBeVisible() // Nav should collapse at mobile size
 
     const tabletSize = { width: 1024, height: 800 }
     await comfyPage.page.setViewportSize(tabletSize)
-    expect(cardCount).toBeGreaterThan(0)
+    await comfyPage.templates.waitForMinimumCardCount(1)
     await expect(templateGrid).toBeVisible()
     await expect(nav).toBeVisible() // Nav should be visible at tablet size
   })

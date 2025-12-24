@@ -11,7 +11,6 @@
     }"
   >
     <div
-      ref="contentMeasureRef"
       :class="
         isOverflowing
           ? 'side-tool-bar-container overflow-y-auto'
@@ -44,6 +43,7 @@
         <SidebarHelpCenterIcon :is-small="isSmall" />
         <SidebarBottomPanelToggleButton :is-small="isSmall" />
         <SidebarShortcutsToggleButton :is-small="isSmall" />
+        <SidebarSettingsButton :is-small="isSmall" />
       </div>
     </div>
   </nav>
@@ -56,6 +56,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import ComfyMenuButton from '@/components/sidebar/ComfyMenuButton.vue'
 import SidebarBottomPanelToggleButton from '@/components/sidebar/SidebarBottomPanelToggleButton.vue'
+import SidebarSettingsButton from '@/components/sidebar/SidebarSettingsButton.vue'
 import SidebarShortcutsToggleButton from '@/components/sidebar/SidebarShortcutsToggleButton.vue'
 import { useSettingStore } from '@/platform/settings/settingStore'
 import { useTelemetry } from '@/platform/telemetry'
@@ -78,7 +79,6 @@ const userStore = useUserStore()
 const commandStore = useCommandStore()
 const canvasStore = useCanvasStore()
 const sideToolbarRef = ref<HTMLElement>()
-const contentMeasureRef = ref<HTMLElement>()
 const topToolbarRef = ref<HTMLElement>()
 const bottomToolbarRef = ref<HTMLElement>()
 

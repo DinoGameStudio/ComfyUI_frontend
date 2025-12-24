@@ -75,6 +75,7 @@ import { useQueueProgress } from '@/composables/queue/useQueueProgress'
 import { useResultGallery } from '@/composables/queue/useResultGallery'
 import { useErrorHandling } from '@/composables/useErrorHandling'
 import { useAssetSelectionStore } from '@/platform/assets/composables/useAssetSelectionStore'
+import { isCloud } from '@/platform/distribution/types'
 import { api } from '@/scripts/api'
 import { useAssetsStore } from '@/stores/assetsStore'
 import { useCommandStore } from '@/stores/commandStore'
@@ -85,9 +86,15 @@ import { useSidebarTabStore } from '@/stores/workspace/sidebarTabStore'
 
 type OverlayState = 'hidden' | 'empty' | 'active' | 'expanded'
 
-const props = defineProps<{
-  expanded?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    expanded?: boolean
+    menuHovered?: boolean
+  }>(),
+  {
+    menuHovered: false
+  }
+)
 
 const emit = defineEmits<{
   (e: 'update:expanded', value: boolean): void
@@ -110,6 +117,7 @@ const {
   currentNodeProgressStyle
 } = useQueueProgress()
 const isHovered = ref(false)
+const isOverlayHovered = computed(() => isHovered.value || props.menuHovered)
 const internalExpanded = ref(false)
 const isExpanded = computed({
   get: () =>
@@ -142,7 +150,7 @@ const showBackground = computed(
   () =>
     overlayState.value === 'expanded' ||
     overlayState.value === 'empty' ||
-    (overlayState.value === 'active' && isHovered.value)
+    (overlayState.value === 'active' && isOverlayHovered.value)
 )
 
 const isVisible = computed(() => overlayState.value !== 'hidden')
@@ -156,7 +164,7 @@ const containerClass = computed(() =>
 const bottomRowClass = computed(
   () =>
     `flex items-center justify-end gap-4 transition-opacity duration-200 ease-in-out ${
-      overlayState.value === 'active' && isHovered.value
+      overlayState.value === 'active' && isOverlayHovered.value
         ? 'opacity-100 pointer-events-auto'
         : 'opacity-0 pointer-events-none'
     }`
@@ -256,11 +264,21 @@ const cancelQueuedWorkflows = wrapWithErrorHandlingAsync(async () => {
 
 const interruptAll = wrapWithErrorHandlingAsync(async () => {
   const tasks = queueStore.runningTasks
-  await Promise.all(
-    tasks
-      .filter((task) => task.promptId != null)
-      .map((task) => api.interrupt(task.promptId))
-  )
+  const promptIds = tasks
+    .map((task) => task.promptId)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0)
+
+  if (!promptIds.length) return
+
+  // Cloud backend supports cancelling specific jobs via /queue delete,
+  // while /interrupt always targets the "first" job. Use the targeted API
+  // on cloud to ensure we cancel the workflow the user clicked.
+  if (isCloud) {
+    await Promise.all(promptIds.map((id) => api.deleteItem('queue', id)))
+    return
+  }
+
+  await Promise.all(promptIds.map((id) => api.interrupt(id)))
 })
 
 const showClearHistoryDialog = () => {

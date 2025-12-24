@@ -46,6 +46,8 @@ export const useLoad3dViewer = (node?: LGraphNode) => {
   const needApplyChanges = ref(true)
   const isPreview = ref(false)
   const isStandaloneMode = ref(false)
+  const isSplatModel = ref(false)
+  const isPlyModel = ref(false)
 
   let load3d: Load3d | null = null
   let sourceLoad3d: Load3d | null = null
@@ -187,17 +189,18 @@ export const useLoad3dViewer = (node?: LGraphNode) => {
       const width = node.widgets?.find((w) => w.name === 'width')
       const height = node.widgets?.find((w) => w.name === 'height')
 
+      const hasTargetDimensions = !!(width && height)
+
       load3d = new Load3d(containerRef, {
         width: width ? (toRaw(width).value as number) : undefined,
         height: height ? (toRaw(height).value as number) : undefined,
-        getDimensions:
-          width && height
-            ? () => ({
-                width: width.value as number,
-                height: height.value as number
-              })
-            : undefined,
-        isViewerMode: true
+        getDimensions: hasTargetDimensions
+          ? () => ({
+              width: width.value as number,
+              height: height.value as number
+            })
+          : undefined,
+        isViewerMode: hasTargetDimensions
       })
 
       await useLoad3dService().copyLoad3dState(source, load3d)
@@ -252,6 +255,9 @@ export const useLoad3dViewer = (node?: LGraphNode) => {
           modelConfig.materialMode || source.modelManager.materialMode
       }
 
+      isSplatModel.value = source.isSplatModel()
+      isPlyModel.value = source.isPlyModel()
+
       initialState.value = {
         backgroundColor: backgroundColor.value,
         showGrid: showGrid.value,
@@ -300,6 +306,8 @@ export const useLoad3dViewer = (node?: LGraphNode) => {
       backgroundRenderMode.value = 'tiled'
       upDirection.value = 'original'
       materialMode.value = 'original'
+      isSplatModel.value = load3d.isSplatModel()
+      isPlyModel.value = load3d.isPlyModel()
 
       isPreview.value = true
     } catch (error) {
@@ -516,6 +524,8 @@ export const useLoad3dViewer = (node?: LGraphNode) => {
     needApplyChanges,
     isPreview,
     isStandaloneMode,
+    isSplatModel,
+    isPlyModel,
 
     // Methods
     initializeViewer,

@@ -2,7 +2,7 @@
   <div class="relative">
     <div class="mb-4">
       <Button
-        class="text-text-secondary w-full border-0 bg-secondary-background hover:bg-secondary-background-hover"
+        class="text-base-foreground w-full border-0 bg-secondary-background hover:bg-secondary-background-hover"
         :disabled="isRecording || readonly"
         @click="handleStartRecording"
       >
@@ -78,7 +78,6 @@
       @ended="playback.onPlaybackEnded"
       @loadedmetadata="playback.onMetadataLoaded"
     />
-    <LODFallback />
   </div>
 </template>
 
@@ -91,10 +90,8 @@ import { t } from '@/i18n'
 import type { LGraphNode } from '@/lib/litegraph/src/LGraphNode'
 import type { IBaseWidget } from '@/lib/litegraph/src/types/widgets'
 import { useToastStore } from '@/platform/updates/common/toastStore'
-import LODFallback from '@/renderer/extensions/vueNodes/components/LODFallback.vue'
 import { app } from '@/scripts/app'
 import { useAudioService } from '@/services/audioService'
-import type { SimplifiedWidget } from '@/types/simplifiedWidget'
 
 import { useAudioPlayback } from '../composables/audio/useAudioPlayback'
 import { useAudioRecorder } from '../composables/audio/useAudioRecorder'
@@ -102,7 +99,6 @@ import { useAudioWaveform } from '../composables/audio/useAudioWaveform'
 import { formatTime } from '../utils/audioUtils'
 
 const props = defineProps<{
-  widget: SimplifiedWidget<string | number | undefined>
   readonly?: boolean
   nodeId: string
 }>()
@@ -159,8 +155,8 @@ const isWaveformActive = computed(() => isRecording.value || isPlaying.value)
 const modelValue = defineModel<string>({ default: '' })
 
 const litegraphNode = computed(() => {
-  if (!props.nodeId || !app.rootGraph) return null
-  return app.rootGraph.getNodeById(props.nodeId) as LGraphNode | null
+  if (!props.nodeId || !app.canvas.graph) return null
+  return app.canvas.graph.getNodeById(props.nodeId) as LGraphNode | null
 })
 
 async function handleRecordingComplete(blob: Blob) {

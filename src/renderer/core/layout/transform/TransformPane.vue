@@ -4,8 +4,7 @@
     :class="
       cn(
         'absolute inset-0 w-full h-full pointer-events-none',
-        isInteracting ? 'transform-pane--interacting' : 'will-change-auto',
-        isLOD && 'isLOD'
+        isInteracting ? 'transform-pane--interacting' : 'will-change-auto'
       )
     "
     :style="transformStyle"
@@ -22,7 +21,6 @@ import { computed } from 'vue'
 import type { LGraphCanvas } from '@/lib/litegraph/src/litegraph'
 import { useTransformSettling } from '@/renderer/core/layout/transform/useTransformSettling'
 import { useTransformState } from '@/renderer/core/layout/transform/useTransformState'
-import { useLOD } from '@/renderer/extensions/vueNodes/lod/useLOD'
 import { cn } from '@/utils/tailwindUtil'
 
 interface TransformPaneProps {
@@ -31,18 +29,12 @@ interface TransformPaneProps {
 
 const props = defineProps<TransformPaneProps>()
 
-const { camera, transformStyle, syncWithCanvas } = useTransformState()
-
-const { isLOD } = useLOD(camera)
+const { transformStyle, syncWithCanvas } = useTransformState()
 
 const canvasElement = computed(() => props.canvas?.canvas)
 const { isTransforming: isInteracting } = useTransformSettling(canvasElement, {
-  settleDelay: 512
+  settleDelay: 16
 })
-
-const emit = defineEmits<{
-  transformUpdate: []
-}>()
 
 useRafFn(
   () => {
@@ -50,7 +42,6 @@ useRafFn(
       return
     }
     syncWithCanvas(props.canvas)
-    emit('transformUpdate')
   },
   { immediate: true }
 )

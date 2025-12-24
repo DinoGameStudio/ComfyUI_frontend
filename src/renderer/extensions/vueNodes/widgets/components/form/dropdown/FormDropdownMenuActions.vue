@@ -66,8 +66,9 @@ function handleSortSelected(item: SortOption) {
       <input
         v-model="searchQuery"
         type="text"
+        autofocus
         :class="resetInputStyle"
-        placeholder="Search"
+        :placeholder="$t('g.search')"
       />
     </label>
 
