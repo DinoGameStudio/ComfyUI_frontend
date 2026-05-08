@@ -1,12 +1,14 @@
 <script setup lang="ts" generic="T extends WidgetValue">
-import Button from 'primevue/button'
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { defineAsyncComponent, ref, watch } from 'vue'
 import type { Component } from 'vue'
 
+import Popover from '@/components/ui/Popover.vue'
 import type {
   SimplifiedControlWidget,
   WidgetValue
 } from '@/types/simplifiedWidget'
+
+import ValueControlButton from './ValueControlButton.vue'
 
 const ValueControlPopover = defineAsyncComponent(
   () => import('./ValueControlPopover.vue')
@@ -19,42 +21,19 @@ const props = defineProps<{
 
 const modelValue = defineModel<T>()
 
-const popover = ref()
-
 const controlModel = ref(props.widget.controlWidget.value)
 
-const controlButtonIcon = computed(() => {
-  switch (controlModel.value) {
-    case 'increment':
-      return 'pi pi-plus'
-    case 'decrement':
-      return 'pi pi-minus'
-    case 'fixed':
-      return 'icon-[lucide--pencil-off]'
-    default:
-      return 'icon-[lucide--shuffle]'
-  }
-})
-
 watch(controlModel, props.widget.controlWidget.update)
-
-const togglePopover = (event: Event) => {
-  popover.value.toggle(event)
-}
 </script>
-
 <template>
   <div class="relative grid grid-cols-subgrid">
     <component :is="component" v-bind="$attrs" v-model="modelValue" :widget>
-      <Button
-        variant="link"
-        size="small"
-        class="h-4 w-7 self-center rounded-xl bg-blue-100/30 p-0"
-        @pointerdown.stop.prevent="togglePopover"
-      >
-        <i :class="`${controlButtonIcon} text-blue-100 text-xs size-3.5`" />
-      </Button>
+      <Popover>
+        <template #button>
+          <ValueControlButton :mode="controlModel" class="self-center" />
+        </template>
+        <ValueControlPopover v-model="controlModel" />
+      </Popover>
     </component>
-    <ValueControlPopover ref="popover" v-model="controlModel" />
   </div>
 </template>

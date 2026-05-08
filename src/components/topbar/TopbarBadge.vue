@@ -9,11 +9,12 @@
   >
     <i
       v-if="iconClass"
+      data-testid="badge-icon"
       :class="['shrink-0 text-base', iconClass, iconColorClass]"
     />
     <div
       v-else-if="badge.label"
-      class="shrink-0 rounded-full px-1.5 py-0.5 text-xxxs font-semibold"
+      class="shrink-0 rounded-full px-1.5 py-0.5 text-3xs font-semibold"
       :class="labelClasses"
     >
       {{ badge.label }}
@@ -32,12 +33,12 @@
       <div class="flex max-w-xs min-w-40 flex-col gap-2 p-3">
         <div
           v-if="badge.label"
-          class="w-fit rounded-full px-1.5 py-0.5 text-xxxs font-semibold"
+          class="w-fit rounded-full px-1.5 py-0.5 text-3xs font-semibold"
           :class="labelClasses"
         >
           {{ badge.label }}
         </div>
-        <div class="text-sm font-inter">{{ badge.text }}</div>
+        <div class="font-inter text-sm">{{ badge.text }}</div>
         <div v-if="badge.tooltip" class="text-xs">
           {{ badge.tooltip }}
         </div>
@@ -62,11 +63,12 @@
     >
       <i
         v-if="iconClass"
+        data-testid="badge-icon"
         :class="['shrink-0 text-base', iconClass, iconColorClass]"
       />
       <div
         v-if="badge.label"
-        class="shrink-0 rounded-full px-1.5 py-0.5 text-xxxs font-semibold"
+        class="shrink-0 rounded-full px-1.5 py-0.5 text-3xs font-semibold"
         :class="labelClasses"
       >
         {{ badge.label }}
@@ -85,12 +87,12 @@
       <div class="flex max-w-xs min-w-40 flex-col gap-2 p-3">
         <div
           v-if="badge.label"
-          class="w-fit rounded-full px-1.5 py-0.5 text-xxxs font-semibold"
+          class="w-fit rounded-full px-1.5 py-0.5 text-3xs font-semibold"
           :class="labelClasses"
         >
           {{ badge.label }}
         </div>
-        <div class="text-sm font-inter">{{ badge.text }}</div>
+        <div class="font-inter text-sm">{{ badge.text }}</div>
         <div v-if="badge.tooltip" class="text-xs">
           {{ badge.tooltip }}
         </div>
@@ -108,11 +110,12 @@
   >
     <i
       v-if="iconClass"
+      data-testid="badge-icon"
       :class="['shrink-0 text-base', iconClass, iconColorClass]"
     />
     <div
       v-if="badge.label"
-      class="shrink-0 rounded-full px-1.5 py-0.5 text-xxxs font-semibold"
+      class="shrink-0 rounded-full px-1.5 py-0.5 text-3xs font-semibold"
       :class="labelClasses"
     >
       {{ badge.label }}
@@ -127,23 +130,21 @@ import Popover from 'primevue/popover'
 import { computed, ref } from 'vue'
 
 import type { TopbarBadge } from '@/types/comfy'
-import { cn } from '@/utils/tailwindUtil'
+import { cn } from '@comfyorg/tailwind-utils'
 
-const props = withDefaults(
-  defineProps<{
-    badge: TopbarBadge
-    displayMode?: 'full' | 'compact' | 'icon-only'
-    reverseOrder?: boolean
-    noPadding?: boolean
-    backgroundColor?: string
-  }>(),
-  {
-    displayMode: 'full',
-    reverseOrder: false,
-    noPadding: false,
-    backgroundColor: 'var(--comfy-menu-bg)'
-  }
-)
+const {
+  badge,
+  displayMode = 'full',
+  reverseOrder,
+  noPadding,
+  backgroundColor = 'var(--comfy-menu-bg)'
+} = defineProps<{
+  badge: TopbarBadge
+  displayMode?: 'full' | 'compact' | 'icon-only'
+  reverseOrder?: boolean
+  noPadding?: boolean
+  backgroundColor?: string
+}>()
 
 const popover = ref<InstanceType<typeof Popover>>()
 
@@ -151,10 +152,10 @@ const togglePopover = (event: Event) => {
   popover.value?.toggle(event)
 }
 
-const variant = computed(() => props.badge.variant ?? 'info')
+const variant = computed(() => badge.variant ?? 'info')
 
 const menuBackgroundStyle = computed(() => ({
-  backgroundColor: props.backgroundColor
+  backgroundColor: backgroundColor
 }))
 
 const labelClasses = computed(() => {
@@ -174,7 +175,7 @@ const textClasses = computed(() => {
     case 'error':
       return 'text-danger-100'
     case 'warning':
-      return 'text-gold-600'
+      return 'text-warning-background'
     case 'info':
     default:
       return 'text-text-primary'
@@ -184,14 +185,14 @@ const textClasses = computed(() => {
 const iconColorClass = computed(() => textClasses.value)
 
 const iconClass = computed(() => {
-  if (props.badge.icon) {
-    return props.badge.icon
+  if (badge.icon) {
+    return badge.icon
   }
   switch (variant.value) {
     case 'error':
       return 'pi pi-exclamation-circle'
     case 'warning':
-      return 'pi pi-exclamation-triangle'
+      return 'icon-[lucide--triangle-alert]'
     case 'info':
     default:
       return undefined
@@ -208,7 +209,7 @@ const dotClasses = computed(() => {
       return 'bg-gold-600'
     case 'info':
     default:
-      return 'bg-slate-100'
+      return 'bg-text-secondary'
   }
 })
 

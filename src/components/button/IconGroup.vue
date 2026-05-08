@@ -2,7 +2,8 @@
   <div
     :class="
       cn(
-        'flex justify-center items-center shrink-0 outline-hidden border-none p-0 rounded-lg bg-secondary-background shadow-sm transition-all duration-200 cursor-pointer'
+        'flex shrink-0 cursor-pointer items-center justify-center rounded-lg border-none bg-secondary-background p-0 shadow-sm outline-hidden transition-all duration-200',
+        backgroundClass
       )
     "
   >
@@ -11,5 +12,9 @@
 </template>
 
 <script setup lang="ts">
-import { cn } from '@/utils/tailwindUtil'
+import { cn } from '@comfyorg/tailwind-utils'
+
+const { backgroundClass } = defineProps<{
+  backgroundClass?: string
+}>()
 </script>

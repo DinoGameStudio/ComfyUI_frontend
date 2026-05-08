@@ -1,3 +1,4 @@
+import { MAX_MULTITYPE_SLICES } from '@/constants/slotColors'
 import type { LGraphNode } from '@/lib/litegraph/src/LGraphNode'
 import { LabelPosition, SlotShape, SlotType } from '@/lib/litegraph/src/draw'
 import type {
@@ -30,14 +31,14 @@ export interface IDrawOptions {
   highlight?: boolean
 }
 
-const ROTATION_OFFSET = -Math.PI / 2
+const ROTATION_OFFSET = -Math.PI
 
 /** Shared base class for {@link LGraphNode} input and output slots. */
 export abstract class NodeSlot extends SlotBase implements INodeSlot {
   pos?: Point
 
   /** The offset from the parent node to the centre point of this slot. */
-  get #centreOffset(): Readonly<Point> {
+  private get _centreOffset(): Readonly<Point> {
     const nodePos = this.node.pos
     const { boundingRect } = this
 
@@ -55,9 +56,9 @@ export abstract class NodeSlot extends SlotBase implements INodeSlot {
   /** The center point of this slot when the node is collapsed. */
   abstract get collapsedPos(): Readonly<Point>
 
-  #node: LGraphNode
+  protected _node: LGraphNode
   get node(): LGraphNode {
-    return this.#node
+    return this._node
   }
 
   get highlightColor(): CanvasColour {
@@ -89,7 +90,7 @@ export abstract class NodeSlot extends SlotBase implements INodeSlot {
     super(name, type, rectangle)
 
     Object.assign(this, rest)
-    this.#node = node
+    this._node = node
   }
 
   /**
@@ -126,7 +127,7 @@ export abstract class NodeSlot extends SlotBase implements INodeSlot {
       ? this.highlightColor
       : LiteGraph.NODE_TEXT_COLOR
 
-    const pos = this.#centreOffset
+    const pos = this._centreOffset
     const slot_type = this.type
     const slot_shape = (
       slot_type === SlotType.Array ? SlotShape.Grid : this.shape
@@ -172,17 +173,16 @@ export abstract class NodeSlot extends SlotBase implements INodeSlot {
           path.arc(pos[0], pos[1], highlight ? 2.5 : 1.5, 0, Math.PI * 2)
           ctx.clip(path, 'evenodd')
         }
+
         const radius = highlight ? 5 : 4
-        const typesSet = new Set(
-          `${this.type}`
-            .split(',')
-            .map(
-              this.isConnected
-                ? (type) => colorContext.getConnectedColor(type)
-                : (type) => colorContext.getDisconnectedColor(type)
-            )
-        )
-        const types = [...typesSet].slice(0, 3)
+        const colorMapper = this.isConnected
+          ? colorContext.getConnectedColor
+          : colorContext.getDisconnectedColor
+        const types = `${this.type}`
+          .split(',')
+          .map(colorMapper)
+          .slice(0, MAX_MULTITYPE_SLICES)
+
         if (types.length > 1) {
           doFill = false
           const arcLen = (Math.PI * 2) / types.length
@@ -258,6 +258,25 @@ export abstract class NodeSlot extends SlotBase implements INodeSlot {
     ctx.fillStyle = originalFillStyle
     ctx.strokeStyle = originalStrokeStyle
     ctx.lineWidth = originalLineWidth
+  }
+
+  /**
+   * Custom JSON serialization to prevent circular reference errors.
+   * Returns only serializable slot properties without the node back-reference.
+   */
+  toJSON(): INodeSlot {
+    return {
+      name: this.name,
+      type: this.type,
+      label: this.label,
+      color_on: this.color_on,
+      color_off: this.color_off,
+      shape: this.shape,
+      dir: this.dir,
+      localized_name: this.localized_name,
+      pos: this.pos,
+      boundingRect: [...this.boundingRect] as [number, number, number, number]
+    }
   }
 
   drawCollapsed(ctx: CanvasRenderingContext2D) {

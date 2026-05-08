@@ -25,6 +25,10 @@
       "custom": "custom"
     }
   },
+  "Comfy_Appearance_DisableAnimations": {
+    "name": "Disable animations",
+    "tooltip": "Turns off most CSS animations and transitions. Speeds up inference when the display GPU is also used for generation."
+  },
   "Comfy_Canvas_BackgroundImage": {
     "name": "Canvas background image",
     "tooltip": "Image URL for the canvas background. You can right-click an image in the outputs panel and select \"Set as Background\" to use it, or upload your own image using the upload button."
@@ -52,7 +56,8 @@
     }
   },
   "Comfy_Canvas_SelectionToolbox": {
-    "name": "Show selection toolbox"
+    "name": "Show selection toolbox",
+    "tooltip": "Display a floating toolbar when nodes are selected, providing quick access to common actions."
   },
   "Comfy_ConfirmClear": {
     "name": "Require confirmation when clearing workflow"
@@ -94,6 +99,10 @@
     "name": "Float widget rounding decimal places [0 = auto].",
     "tooltip": "(requires page reload)"
   },
+  "Comfy_Graph_AutoPanSpeed": {
+    "name": "Auto-pan speed",
+    "tooltip": "Maximum speed when auto-panning by dragging to the canvas edge. Set to 0 to disable auto-panning."
+  },
   "Comfy_Graph_CanvasInfo": {
     "name": "Show canvas info on bottom left corner (fps, etc.)"
   },
@@ -102,6 +111,10 @@
   },
   "Comfy_Graph_CtrlShiftZoom": {
     "name": "Enable fast-zoom shortcut (Ctrl + Shift + Drag)"
+  },
+  "Comfy_Graph_DeduplicateSubgraphNodeIds": {
+    "name": "Deduplicate subgraph node IDs",
+    "tooltip": "Automatically reassign duplicate node IDs in subgraphs when loading a workflow."
   },
   "Comfy_Graph_LinkMarkers": {
     "name": "Link midpoint markers",
@@ -142,6 +155,7 @@
   },
   "Comfy_LinkRenderMode": {
     "name": "Link Render Mode",
+    "tooltip": "Controls the appearance and visibility of connection links between nodes on the canvas.",
     "options": {
       "Straight": "Straight",
       "Linear": "Linear",
@@ -220,6 +234,10 @@
   "Comfy_Node_AllowImageSizeDraw": {
     "name": "Show width × height below the image preview"
   },
+  "Comfy_Node_AlwaysShowAdvancedWidgets": {
+    "name": "Always show advanced widgets on all nodes",
+    "tooltip": "When enabled, advanced widgets are always visible on all nodes without needing to expand them individually."
+  },
   "Comfy_Node_AutoSnapLinkToSlot": {
     "name": "Auto snap link to node slot",
     "tooltip": "When dragging a link over a node, the link automatically snap to a viable input slot on the node"
@@ -274,12 +292,25 @@
   "Comfy_NodeBadge_ShowApiPricing": {
     "name": "Show API node pricing badge"
   },
+  "Comfy_NodeLibrary_NewDesign": {
+    "name": "New Node Library Design",
+    "tooltip": "Enable the redesigned node library sidebar with tabs (Essential, All, Custom), improved search, and hover previews."
+  },
+  "Comfy_NodeReplacement_Enabled": {
+    "name": "Enable node replacement suggestions",
+    "tooltip": "When enabled, missing nodes with known replacements will be shown as replaceable in the missing nodes dialog, allowing you to review and apply replacements."
+  },
   "Comfy_NodeSearchBoxImpl": {
     "name": "Node search box implementation",
     "options": {
       "default": "default",
+      "v1 (legacy)": "v1 (legacy)",
       "litegraph (legacy)": "litegraph (legacy)"
     }
+  },
+  "Comfy_NodeSearchBoxImpl_FollowCursor": {
+    "name": "Added nodes follow the cursor",
+    "tooltip": "When enabled, nodes added from the search box follow the cursor until clicked to place. Only applies to the default implementation."
   },
   "Comfy_NodeSearchBoxImpl_NodePreview": {
     "name": "Node preview",
@@ -287,15 +318,15 @@
   },
   "Comfy_NodeSearchBoxImpl_ShowCategory": {
     "name": "Show node category in search results",
-    "tooltip": "Only applies to the default implementation"
+    "tooltip": "Only applies to v1 (legacy)"
   },
   "Comfy_NodeSearchBoxImpl_ShowIdName": {
     "name": "Show node id name in search results",
-    "tooltip": "Only applies to the default implementation"
+    "tooltip": "Does not apply to litegraph (legacy)"
   },
   "Comfy_NodeSearchBoxImpl_ShowNodeFrequency": {
     "name": "Show node frequency in search results",
-    "tooltip": "Only applies to the default implementation"
+    "tooltip": "Only applies to v1 (legacy)"
   },
   "Comfy_NodeSuggestions_number": {
     "name": "Number of nodes suggestions",
@@ -328,9 +359,17 @@
     "name": "Queue history size",
     "tooltip": "The maximum number of tasks that show in the queue history."
   },
+  "Comfy_Queue_QPOV2": {
+    "name": "Docked job history/queue panel",
+    "tooltip": "Replaces the floating job queue panel with an equivalent job queue embedded in the job history side panel. You can disable this to return to the floating panel layout."
+  },
   "Comfy_QueueButton_BatchCountLimit": {
     "name": "Batch count limit",
     "tooltip": "The maximum number of tasks added to the queue at one button click"
+  },
+  "Comfy_RightSidePanel_ShowErrorsTab": {
+    "name": "Show errors tab in side panel",
+    "tooltip": "When enabled, an errors tab is displayed in the right side panel to show workflow execution errors at a glance."
   },
   "Comfy_Sidebar_Location": {
     "name": "Sidebar location",
@@ -368,6 +407,14 @@
   },
   "Comfy_TreeExplorer_ItemPadding": {
     "name": "Tree explorer item padding"
+  },
+  "Comfy_UI_TabBarLayout": {
+    "name": "Tab Bar Layout",
+    "tooltip": "Controls the elements contained in the integrated tab bar.",
+    "options": {
+      "Default": "Default",
+      "Legacy": "Legacy"
+    }
   },
   "Comfy_UseNewMenu": {
     "name": "Use new menu",
@@ -419,9 +466,6 @@
   "Comfy_Workflow_ShowMissingModelsWarning": {
     "name": "Show missing models warning"
   },
-  "Comfy_Workflow_ShowMissingNodesWarning": {
-    "name": "Show missing nodes warning"
-  },
   "Comfy_Workflow_SortNodeIdOnSave": {
     "name": "Sort node IDs when saving workflow"
   },
@@ -446,6 +490,10 @@
   "LiteGraph_ContextMenu_Scaling": {
     "name": "Scale node combo widget menus (lists) when zoomed in"
   },
+  "LiteGraph_Group_SelectChildrenOnClick": {
+    "name": "Select group children on click",
+    "tooltip": "When enabled, clicking a group selects all nodes and items inside it"
+  },
   "LiteGraph_Node_DefaultPadding": {
     "name": "Always shrink new nodes",
     "tooltip": "Resize nodes to the smallest possible size when created. When disabled, a newly added node will be widened slightly to show widget values."
@@ -458,6 +506,7 @@
     "tooltip": "The bezier control point offset from the reroute centre point"
   },
   "pysssss_SnapToGrid": {
-    "name": "Always snap to grid"
+    "name": "Always snap to grid",
+    "tooltip": "When enabled, nodes will automatically align to the grid when moved or resized."
   }
 }

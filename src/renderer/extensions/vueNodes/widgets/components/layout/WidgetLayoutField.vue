@@ -1,24 +1,42 @@
 <script setup lang="ts">
-import { inject } from 'vue'
+import { computed } from 'vue'
 
 import type { SimplifiedWidget } from '@/types/simplifiedWidget'
-import { cn } from '@/utils/tailwindUtil'
+import { useHideLayoutField } from '@/types/widgetTypes'
+import { cn } from '@comfyorg/tailwind-utils'
 
-defineProps<{
+const { widget, rootClass } = defineProps<{
   widget: Pick<
     SimplifiedWidget<string | number | undefined>,
     'name' | 'label' | 'borderStyle'
   >
+  rootClass?: string
+  noBorder?: boolean
 }>()
 
-const hideLayoutField = inject<boolean>('hideLayoutField', false)
+const hideLayoutField = useHideLayoutField()
+const borderStyle = computed(() =>
+  cn(
+    'focus-within:ring focus-within:ring-component-node-widget-background-highlighted',
+    widget.borderStyle
+  )
+)
 </script>
 
 <template>
   <div
-    class="grid grid-cols-subgrid min-w-0 justify-between gap-1 text-node-component-slot-text"
+    :class="
+      cn(
+        'grid min-w-0 grid-cols-subgrid justify-between gap-1 text-node-component-slot-text',
+        rootClass
+      )
+    "
   >
-    <div v-if="!hideLayoutField" class="truncate content-center-safe">
+    <div
+      v-if="!hideLayoutField"
+      data-testid="widget-layout-field-label"
+      class="content-center-safe truncate"
+    >
       <template v-if="widget.name">
         {{ widget.label || widget.name }}
       </template>
@@ -28,15 +46,15 @@ const hideLayoutField = inject<boolean>('hideLayoutField', false)
       <div
         :class="
           cn(
-            'cursor-default min-w-0 rounded-lg focus-within:ring focus-within:ring-component-node-widget-background-highlighted transition-all',
-            widget.borderStyle
+            'min-w-0 cursor-default rounded-lg transition-all',
+            !noBorder && borderStyle
           )
         "
         @pointerdown.stop
         @pointermove.stop
         @pointerup.stop
       >
-        <slot />
+        <slot :border-style />
       </div>
     </div>
   </div>

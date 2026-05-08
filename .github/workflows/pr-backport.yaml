@@ -64,7 +64,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -348,6 +348,8 @@ jobs:
               PR_NUM=$(echo "${PR_URL}" | grep -o '[0-9]*$')
 
               if [ -n "${PR_NUM}" ]; then
+                gh pr merge "${PR_NUM}" --auto --squash --repo "${{ github.repository }}" \
+                  || echo "::warning::Failed to enable auto-merge for PR #${PR_NUM}"
                 gh pr comment "${PR_NUMBER}" --body "@${PR_AUTHOR} Successfully backported to #${PR_NUM}"
               fi
             else
@@ -461,7 +463,6 @@ jobs:
               echo "::warning::Failed to delete ${branch}"
             fi
           done < "$FILE"
-
 
       - name: Remove needs-backport label
         if: steps.filter-targets.outputs.skip != 'true' && success()

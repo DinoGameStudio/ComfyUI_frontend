@@ -3,7 +3,14 @@ import { z } from 'zod'
 
 import { assetItemSchema } from './assetSchema'
 
-const zMediaKindSchema = z.enum(['video', 'audio', 'image', '3D'])
+const zMediaKindSchema = z.enum([
+  'video',
+  'audio',
+  'image',
+  '3D',
+  'text',
+  'other'
+])
 export type MediaKind = z.infer<typeof zMediaKindSchema>
 
 const zDimensionsSchema = z.object({
@@ -42,3 +49,5 @@ interface MediaAssetProviderValue {
 
 export const MediaAssetKey: InjectionKey<MediaAssetProviderValue> =
   Symbol('mediaAsset')
+
+export const MIME_ASSET_INFO = 'application/x-comfy-asset-info'

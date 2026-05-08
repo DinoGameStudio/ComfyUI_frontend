@@ -1,6 +1,6 @@
 <template>
   <div
-    v-if="tooltipText"
+    v-show="tooltipText"
     ref="tooltipRef"
     class="node-tooltip"
     :style="{ left, top }"
@@ -34,7 +34,8 @@ const left = ref<string>()
 const top = ref<string>()
 
 function hideTooltip() {
-  return (tooltipText.value = '')
+  if (!tooltipText.value) return
+  tooltipText.value = ''
 }
 
 async function showTooltip(tooltip: string | null | undefined) {
@@ -61,7 +62,7 @@ async function showTooltip(tooltip: string | null | undefined) {
 function onIdle() {
   const { canvas } = comfyApp
   const node = canvas?.node_over
-  if (!node) return
+  if (!node || node.flags?.ghost) return
 
   const ctor = node.constructor as { title_mode?: 0 | 1 | 2 | 3 }
   const nodeDef = nodeDefStore.nodeDefsByName[node.type ?? '']

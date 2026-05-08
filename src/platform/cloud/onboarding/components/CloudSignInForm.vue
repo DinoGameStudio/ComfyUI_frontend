@@ -63,14 +63,15 @@
     </Message>
 
     <!-- Submit Button -->
-    <ProgressSpinner v-if="loading" class="h-8 w-8" />
+    <ProgressSpinner v-if="loading" class="size-8" />
     <Button
       v-else
       type="submit"
-      :label="t('auth.login.loginButton')"
       class="mt-4 h-10 font-medium text-white"
       :disabled="!$form.valid"
-    />
+    >
+      {{ t('auth.login.loginButton') }}
+    </Button>
   </Form>
 </template>
 
@@ -78,7 +79,6 @@
 import type { FormSubmitEvent } from '@primevue/forms'
 import { Form } from '@primevue/forms'
 import { zodResolver } from '@primevue/forms/resolvers/zod'
-import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
 import Password from 'primevue/password'
@@ -86,11 +86,12 @@ import ProgressSpinner from 'primevue/progressspinner'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import Button from '@/components/ui/button/Button.vue'
 import { signInSchema } from '@/schemas/signInSchema'
 import type { SignInData } from '@/schemas/signInSchema'
-import { useFirebaseAuthStore } from '@/stores/firebaseAuthStore'
+import { useAuthStore } from '@/stores/authStore'
 
-const authStore = useFirebaseAuthStore()
+const authStore = useAuthStore()
 const loading = computed(() => authStore.loading)
 
 const { t } = useI18n()

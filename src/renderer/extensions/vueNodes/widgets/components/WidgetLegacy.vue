@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useResizeObserver } from '@vueuse/core'
+import { useResizeObserver, whenever } from '@vueuse/core'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useChainCallback } from '@/composables/functional/useChainCallback'
@@ -9,30 +9,46 @@ import type { LGraphNode } from '@/lib/litegraph/src/LGraphNode'
 import type { IBaseWidget } from '@/lib/litegraph/src/types/widgets'
 import { useCanvasStore } from '@/renderer/core/canvas/canvasStore'
 import { augmentToCanvasPointerEvent } from '@/renderer/extensions/vueNodes/utils/eventUtils'
+import { resolveWidgetFromHostNode } from '@/renderer/extensions/vueNodes/widgets/utils/resolvePromotedWidget'
 import { useColorPaletteStore } from '@/stores/workspace/colorPaletteStore'
 import type { SimplifiedWidget } from '@/types/simplifiedWidget'
 
 const props = defineProps<{
   widget: SimplifiedWidget<void>
+  nodeId: string
 }>()
 
 const canvasEl = ref()
+const containerHeight = ref(20)
 
-const canvas: LGraphCanvas = useCanvasStore().canvas as LGraphCanvas
+const canvasStore = useCanvasStore()
+const canvas: LGraphCanvas = canvasStore.canvas as LGraphCanvas
 let node: LGraphNode | undefined
 let widgetInstance: IBaseWidget | undefined
 let pointer: CanvasPointer | undefined
 const scaleFactor = 2
 
-onMounted(() => {
-  node =
-    canvas?.graph?.getNodeById(
-      canvasEl.value.parentElement.attributes['node-id'].value
-    ) ?? undefined
-  if (!node) return
-  widgetInstance = node.widgets?.find((w) => w.name === props.widget.name)
-  if (!widgetInstance) return
-  canvasEl.value.width *= scaleFactor
+function findLegacyWidget():
+  | {
+      node: LGraphNode
+      widget: IBaseWidget
+    }
+  | undefined {
+  const hostNode = canvas?.graph?.getNodeById(props.nodeId) ?? undefined
+  return resolveWidgetFromHostNode(hostNode, props.widget.name)
+}
+
+function bindWidget() {
+  if (widgetInstance) widgetInstance.triggerDraw = () => {}
+
+  const resolved = findLegacyWidget()
+  if (!resolved) {
+    widgetInstance = undefined
+    node = undefined
+    return
+  }
+  node = resolved.node
+  widgetInstance = resolved.widget
   if (!widgetInstance.triggerDraw)
     widgetInstance.callback = useChainCallback(
       widgetInstance.callback,
@@ -41,6 +57,13 @@ onMounted(() => {
       }
     )
   widgetInstance.triggerDraw = draw
+  draw()
+}
+
+onMounted(() => {
+  canvasEl.value.width *= scaleFactor
+  bindWidget()
+  if (!widgetInstance) return
   useResizeObserver(canvasEl.value.parentElement, draw)
   watch(() => useColorPaletteStore().activePaletteId, draw)
   pointer = new CanvasPointer(canvasEl.value)
@@ -49,13 +72,27 @@ onBeforeUnmount(() => {
   if (widgetInstance) widgetInstance.triggerDraw = () => {}
 })
 
+whenever(() => !canvasStore.linearMode, bindWidget)
+watch(() => canvasStore.currentGraph, bindWidget)
+
 function draw() {
   if (!widgetInstance || !node) return
   const width = canvasEl.value.parentElement.clientWidth
-  const height = widgetInstance.computeSize
-    ? widgetInstance.computeSize(width)[1]
-    : 20
+  // Priority: computedHeight (from litegraph) > computeLayoutSize > computeSize
+  let height = 20
+  if (widgetInstance.computedHeight) {
+    height = widgetInstance.computedHeight
+  } else if (widgetInstance.computeLayoutSize) {
+    height = widgetInstance.computeLayoutSize(node).minHeight
+  } else if (widgetInstance.computeSize) {
+    height = widgetInstance.computeSize(width)[1]
+  }
+  containerHeight.value = height
+  // Set node.canvasHeight for legacy widgets that use it (e.g., Impact Pack)
+  // @ts-expect-error canvasHeight is a custom property used by some extensions
+  node.canvasHeight = height
   widgetInstance.y = 0
+  widgetInstance.width = width
   canvasEl.value.height = (height + 2) * scaleFactor
   canvasEl.value.width = width * scaleFactor
   const ctx = canvasEl.value?.getContext('2d')
@@ -87,13 +124,16 @@ function handleMove(e: PointerEvent) {
 }
 </script>
 <template>
-  <div class="relative mx-[-12px] min-w-0 basis-0">
+  <div
+    class="relative mx-[-12px] min-w-0 basis-0"
+    :style="{ minHeight: `${containerHeight}px` }"
+  >
     <canvas
       ref="canvasEl"
-      class="absolute mt-[-13px] w-full cursor-crosshair"
-      @pointerdown="handleDown"
-      @pointerup="handleUp"
-      @pointermove="handleMove"
+      class="absolute w-full cursor-crosshair"
+      @pointerdown.stop="handleDown"
+      @pointerup.stop="handleUp"
+      @pointermove.stop="handleMove"
     />
   </div>
 </template>

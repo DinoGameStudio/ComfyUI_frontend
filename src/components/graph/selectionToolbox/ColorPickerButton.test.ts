@@ -1,4 +1,6 @@
-import { mount } from '@vue/test-utils'
+import type { Mock } from 'vitest'
+import { render, screen } from '@testing-library/vue'
+import userEvent from '@testing-library/user-event'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import Tooltip from 'primevue/tooltip'
@@ -7,8 +9,39 @@ import { createI18n } from 'vue-i18n'
 
 // Import after mocks
 import ColorPickerButton from '@/components/graph/selectionToolbox/ColorPickerButton.vue'
-import { useWorkflowStore } from '@/platform/workflow/management/stores/workflowStore'
+import type { LoadedComfyWorkflow } from '@/platform/workflow/management/stores/comfyWorkflow'
+import {
+  ComfyWorkflow,
+  useWorkflowStore
+} from '@/platform/workflow/management/stores/workflowStore'
 import { useCanvasStore } from '@/renderer/core/canvas/canvasStore'
+import { ChangeTracker } from '@/scripts/changeTracker'
+import { defaultGraph } from '@/scripts/defaultGraph'
+import { createMockPositionable } from '@/utils/__tests__/litegraphTestUtils'
+
+function createMockWorkflow(
+  overrides: Partial<LoadedComfyWorkflow> = {}
+): LoadedComfyWorkflow {
+  const workflow = new ComfyWorkflow({
+    path: 'workflows/color-picker-test.json',
+    modified: 0,
+    size: 0
+  })
+
+  const changeTracker = Object.assign(
+    new ChangeTracker(workflow, structuredClone(defaultGraph)),
+    {
+      captureCanvasState: vi.fn() as Mock
+    }
+  )
+
+  const workflowOverrides = {
+    changeTracker,
+    ...overrides
+  } satisfies Partial<LoadedComfyWorkflow>
+
+  return Object.assign(workflow, workflowOverrides) as LoadedComfyWorkflow
+}
 
 // Mock the litegraph module
 vi.mock('@/lib/litegraph/src/litegraph', async () => {
@@ -70,15 +103,13 @@ describe('ColorPickerButton', () => {
     canvasStore.selectedItems = []
 
     // Mock workflow store
-    workflowStore.activeWorkflow = {
-      changeTracker: {
-        checkState: vi.fn()
-      }
-    } as any
+    workflowStore.activeWorkflow = createMockWorkflow()
   })
 
-  const createWrapper = () => {
-    return mount(ColorPickerButton, {
+  function renderComponent() {
+    const user = userEvent.setup()
+
+    render(ColorPickerButton, {
       global: {
         plugins: [PrimeVue, i18n],
         directives: {
@@ -86,26 +117,30 @@ describe('ColorPickerButton', () => {
         }
       }
     })
+
+    return { user }
   }
 
   it('should render when nodes are selected', () => {
-    // Add a mock node to selectedItems
-    canvasStore.selectedItems = [{ type: 'LGraphNode' } as any]
-    const wrapper = createWrapper()
-    expect(wrapper.find('button').exists()).toBe(true)
+    canvasStore.selectedItems = [createMockPositionable()]
+    renderComponent()
+    expect(screen.getByTestId('color-picker-button')).toBeInTheDocument()
   })
 
   it('should toggle color picker visibility on button click', async () => {
-    canvasStore.selectedItems = [{ type: 'LGraphNode' } as any]
-    const wrapper = createWrapper()
-    const button = wrapper.find('button')
+    canvasStore.selectedItems = [createMockPositionable()]
+    const { user } = renderComponent()
+    const button = screen.getByTestId('color-picker-button')
 
-    expect(wrapper.find('.color-picker-container').exists()).toBe(false)
+    expect(screen.queryByTestId('noColor')).not.toBeInTheDocument()
 
-    await button.trigger('click')
-    expect(wrapper.find('.color-picker-container').exists()).toBe(true)
+    await user.click(button)
+    expect(screen.getByTestId('noColor')).toBeInTheDocument()
+    expect(screen.getByTestId('red')).toBeInTheDocument()
+    expect(screen.getByTestId('green')).toBeInTheDocument()
+    expect(screen.getByTestId('blue')).toBeInTheDocument()
 
-    await button.trigger('click')
-    expect(wrapper.find('.color-picker-container').exists()).toBe(false)
+    await user.click(button)
+    expect(screen.queryByTestId('noColor')).not.toBeInTheDocument()
   })
 })

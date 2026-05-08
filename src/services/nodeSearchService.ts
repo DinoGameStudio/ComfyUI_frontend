@@ -14,7 +14,7 @@ export class NodeSearchService {
   constructor(data: ComfyNodeDefImpl[]) {
     this.nodeFuseSearch = new FuseSearch(data, {
       fuseOptions: {
-        keys: ['name', 'display_name'],
+        keys: ['name', 'display_name', 'search_aliases'],
         includeScore: true,
         threshold: 0.3,
         shouldSort: false,
@@ -34,10 +34,7 @@ export class NodeSearchService {
       id: 'input',
       name: 'Input Type',
       invokeSequence: 'i',
-      getItemOptions: (node) =>
-        Object.values(node.inputs ?? []).flatMap((input) =>
-          input.type.split(',')
-        ),
+      getItemOptions: (node) => node.inputTypes,
       fuseOptions
     })
 

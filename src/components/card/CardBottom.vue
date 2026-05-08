@@ -7,13 +7,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { cn } from '@/utils/tailwindUtil'
+import { cn } from '@comfyorg/tailwind-utils'
 
 const { fullHeight = true } = defineProps<{
   fullHeight?: boolean
 }>()
 
 const containerClasses = computed(() =>
-  cn('flex-1 w-full', fullHeight && 'h-full')
+  cn('w-full flex-1', fullHeight && 'h-full')
 )
 </script>

@@ -34,8 +34,25 @@ class Load3dUtils {
     return await resp.json()
   }
 
+  static readonly MAX_UPLOAD_SIZE_MB = 100
+
   static async uploadFile(file: File, subfolder: string) {
     let uploadPath
+
+    const fileSizeMB = file.size / 1024 / 1024
+    if (fileSizeMB > this.MAX_UPLOAD_SIZE_MB) {
+      const message = t('toastMessages.fileTooLarge', {
+        size: fileSizeMB.toFixed(1),
+        maxSize: this.MAX_UPLOAD_SIZE_MB
+      })
+      console.warn(
+        '[Load3D] uploadFile: file too large',
+        fileSizeMB.toFixed(2),
+        'MB'
+      )
+      useToastStore().addAlert(message)
+      return undefined
+    }
 
     try {
       const body = new FormData()
@@ -61,7 +78,7 @@ class Load3dUtils {
         useToastStore().addAlert(resp.status + ' - ' + resp.statusText)
       }
     } catch (error) {
-      console.error('Upload error:', error)
+      console.error('[Load3D] uploadFile: exception', error)
       useToastStore().addAlert(
         error instanceof Error
           ? error.message
@@ -70,6 +87,15 @@ class Load3dUtils {
     }
 
     return uploadPath
+  }
+
+  static getFilenameExtension(url: string): string | undefined {
+    const queryString = url.split('?')[1]
+    if (queryString) {
+      const filename = new URLSearchParams(queryString).get('filename')
+      if (filename) return filename.split('.').pop()?.toLowerCase()
+    }
+    return url.split('?')[0].split('.').pop()?.toLowerCase()
   }
 
   static splitFilePath(path: string): [string, string] {
@@ -104,6 +130,19 @@ class Load3dUtils {
     )
 
     await Promise.all(uploadPromises)
+  }
+
+  static mapSceneLightIntensityToHdri(
+    sceneIntensity: number,
+    sceneMin: number,
+    sceneMax: number
+  ): number {
+    const span = sceneMax - sceneMin
+    const t = span > 0 ? (sceneIntensity - sceneMin) / span : 0
+    const clampedT = Math.min(1, Math.max(0, t))
+    const mapped = clampedT * 5
+    const minHdri = 0.25
+    return Math.min(5, Math.max(minHdri, mapped))
   }
 }
 

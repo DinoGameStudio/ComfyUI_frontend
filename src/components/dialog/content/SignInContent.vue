@@ -8,7 +8,7 @@
     <template v-else>
       <!-- Header -->
       <div class="mb-8 flex flex-col gap-4">
-        <h1 class="my-0 text-2xl leading-normal font-medium">
+        <h1 class="my-0 text-2xl/normal font-medium">
           {{ isSignIn ? t('auth.login.title') : t('auth.signup.title') }}
         </h1>
         <p class="my-0 text-base">
@@ -49,10 +49,10 @@
       <div class="flex flex-col gap-6">
         <template v-if="ssoAllowed">
           <Button
+            v-if="!googleSsoBlockedReason"
             type="button"
             class="h-10"
-            severity="secondary"
-            outlined
+            variant="secondary"
             @click="signInWithGoogle"
           >
             <i class="pi pi-google mr-2"></i>
@@ -66,8 +66,7 @@
           <Button
             type="button"
             class="h-10"
-            severity="secondary"
-            outlined
+            variant="secondary"
             @click="signInWithGithub"
           >
             <i class="pi pi-github mr-2"></i>
@@ -79,30 +78,31 @@
           </Button>
         </template>
 
-        <Button
-          type="button"
-          class="h-10"
-          severity="secondary"
-          outlined
-          @click="showApiKeyForm = true"
-        >
-          <img
-            src="/assets/images/comfy-logo-mono.svg"
-            class="mr-2 h-5 w-5"
-            :alt="$t('g.comfy')"
-          />
-          {{ t('auth.login.useApiKey') }}
-        </Button>
-        <small class="text-center text-muted">
-          {{ t('auth.apiKey.helpText') }}
-          <a
-            :href="`${comfyPlatformBaseUrl}/login`"
-            target="_blank"
-            class="cursor-pointer text-blue-500"
+        <template v-if="!isCloud">
+          <Button
+            type="button"
+            class="h-10"
+            variant="secondary"
+            @click="showApiKeyForm = true"
           >
-            {{ t('auth.apiKey.generateKey') }}
-          </a>
-        </small>
+            <img
+              src="/assets/images/comfy-logo-mono.svg"
+              class="mr-2 size-5"
+              :alt="$t('g.comfy')"
+            />
+            {{ t('auth.login.useApiKey') }}
+          </Button>
+          <small class="text-center text-muted">
+            {{ t('auth.apiKey.helpText') }}
+            <a
+              :href="`${comfyPlatformBaseUrl}/login`"
+              target="_blank"
+              class="cursor-pointer text-blue-500"
+            >
+              {{ t('auth.apiKey.generateKey') }}
+            </a>
+          </small>
+        </template>
         <Message
           v-if="authActions.accessError.value"
           severity="info"
@@ -142,21 +142,23 @@
 </template>
 
 <script setup lang="ts">
-import Button from 'primevue/button'
 import Divider from 'primevue/divider'
 import Message from 'primevue/message'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { useFirebaseAuthActions } from '@/composables/auth/useFirebaseAuthActions'
+import Button from '@/components/ui/button/Button.vue'
+import { useAuthActions } from '@/composables/auth/useAuthActions'
 import { getComfyPlatformBaseUrl } from '@/config/comfyApi'
 import {
   configValueOrDefault,
   remoteConfig
 } from '@/platform/remoteConfig/remoteConfig'
 import type { SignInData, SignUpData } from '@/schemas/signInSchema'
+import { isCloud } from '@/platform/distribution/types'
 import { isHostWhitelisted, normalizeHost } from '@/utils/hostWhitelist'
 import { isInChina } from '@/utils/networkUtil'
+import { getGoogleSsoBlockedReason } from '@/base/webviewDetection'
 
 import ApiKeyForm from './signin/ApiKeyForm.vue'
 import SignInForm from './signin/SignInForm.vue'
@@ -167,11 +169,12 @@ const { onSuccess } = defineProps<{
 }>()
 
 const { t } = useI18n()
-const authActions = useFirebaseAuthActions()
+const authActions = useAuthActions()
 const isSecureContext = window.isSecureContext
 const isSignIn = ref(true)
 const showApiKeyForm = ref(false)
 const ssoAllowed = isHostWhitelisted(normalizeHost(window.location.hostname))
+const googleSsoBlockedReason = getGoogleSsoBlockedReason()
 const comfyPlatformBaseUrl = computed(() =>
   configValueOrDefault(
     remoteConfig.value,
@@ -186,13 +189,13 @@ const toggleState = () => {
 }
 
 const signInWithGoogle = async () => {
-  if (await authActions.signInWithGoogle()) {
+  if (await authActions.signInWithGoogle({ isNewUser: !isSignIn.value })) {
     onSuccess()
   }
 }
 
 const signInWithGithub = async () => {
-  if (await authActions.signInWithGithub()) {
+  if (await authActions.signInWithGithub({ isNewUser: !isSignIn.value })) {
     onSuccess()
   }
 }

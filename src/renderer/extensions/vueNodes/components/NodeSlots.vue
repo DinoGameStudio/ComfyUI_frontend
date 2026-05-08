@@ -2,28 +2,29 @@
   <div v-if="renderError" class="node-error p-2 text-sm text-red-500">
     {{ st('nodeErrors.slots', 'Node Slots Error') }}
   </div>
-  <div v-else :class="cn('flex justify-between min-w-0', unifiedWrapperClass)">
+  <div v-else :class="cn('flex min-w-0 justify-between', unifiedWrapperClass)">
     <div
       v-if="filteredInputs.length"
-      :class="cn('flex flex-col min-w-0', unifiedDotsClass)"
+      :class="cn('flex min-w-0 flex-col', unifiedDotsClass)"
     >
       <InputSlot
         v-for="(input, index) in filteredInputs"
-        :key="`input-${index}`"
+        :key="`input-${input.name}-${getActualInputIndex(input, index)}`"
         :slot-data="input"
         :node-type="nodeData?.type || ''"
         :node-id="nodeData?.id != null ? String(nodeData.id) : ''"
+        :has-error="inputHasError(input)"
         :index="getActualInputIndex(input, index)"
       />
     </div>
 
     <div
       v-if="nodeData?.outputs?.length"
-      :class="cn('ml-auto flex flex-col min-w-0', unifiedDotsClass)"
+      :class="cn('ml-auto flex min-w-0 flex-col', unifiedDotsClass)"
     >
       <OutputSlot
         v-for="(output, index) in nodeData.outputs"
-        :key="`output-${index}`"
+        :key="`output-${output.name}-${index}`"
         :slot-data="output"
         :node-type="nodeData?.type || ''"
         :node-id="nodeData?.id != null ? String(nodeData.id) : ''"
@@ -44,7 +45,9 @@ import {
   linkedWidgetedInputs,
   nonWidgetedInputs
 } from '@/renderer/extensions/vueNodes/utils/nodeDataUtils'
-import { cn } from '@/utils/tailwindUtil'
+import { useExecutionErrorStore } from '@/stores/executionErrorStore'
+import { getLocatorIdFromNodeData } from '@/utils/graphTraversalUtil'
+import { cn } from '@comfyorg/tailwind-utils'
 
 import InputSlot from './InputSlot.vue'
 import OutputSlot from './OutputSlot.vue'
@@ -55,6 +58,8 @@ interface NodeSlotsProps {
 }
 
 const { nodeData, unified = false } = defineProps<NodeSlotsProps>()
+const executionErrorStore = useExecutionErrorStore()
+const nodeLocatorId = computed(() => getLocatorIdFromNodeData(nodeData))
 
 const linkedWidgetInputs = computed(() =>
   unified ? linkedWidgetedInputs(nodeData) : []
@@ -65,16 +70,20 @@ const filteredInputs = computed(() => [
   ...linkedWidgetInputs.value
 ])
 
+function inputHasError(input: INodeSlot): boolean {
+  return executionErrorStore.slotHasError(nodeLocatorId.value, input.name)
+}
+
 const unifiedWrapperClass = computed((): string =>
   cn(
     unified &&
-      'absolute inset-0 items-center pointer-events-none opacity-0 z-30'
+      'pointer-events-none absolute inset-0 z-30 items-center opacity-0'
   )
 )
 const unifiedDotsClass = computed((): string =>
   cn(
     unified &&
-      'grid grid-cols-1 grid-rows-1 gap-0 [&>*]:row-span-full [&>*]:col-span-full place-items-center'
+      'grid grid-cols-1 grid-rows-1 place-items-center gap-0 *:col-span-full *:row-span-full'
   )
 )
 

@@ -1,0 +1,194 @@
+import { groupBy } from 'es-toolkit'
+import type { NodeId } from '@/platform/workflow/validation/schemas/workflowSchema'
+import type {
+  MissingMediaCandidate,
+  MissingMediaViewModel,
+  MissingMediaGroup,
+  MediaType
+} from './types'
+import type { LGraph } from '@/lib/litegraph/src/LGraph'
+import type { LGraphNode } from '@/lib/litegraph/src/LGraphNode'
+import type {
+  IBaseWidget,
+  IComboWidget
+} from '@/lib/litegraph/src/types/widgets'
+import {
+  collectAllNodes,
+  getExecutionIdByNode
+} from '@/utils/graphTraversalUtil'
+import { LGraphEventMode } from '@/lib/litegraph/src/types/globalEnums'
+import { resolveComboValues } from '@/utils/litegraphUtil'
+import type { AssetItem } from '@/platform/assets/schemas/assetSchema'
+import { assetService } from '@/platform/assets/services/assetService'
+import { isAbortError } from '@/utils/typeGuardUtil'
+
+/** Map of node types to their media widget name and media type. */
+const MEDIA_NODE_WIDGETS: Record<
+  string,
+  { widgetName: string; mediaType: MediaType }
+> = {
+  LoadImage: { widgetName: 'image', mediaType: 'image' },
+  LoadVideo: { widgetName: 'file', mediaType: 'video' },
+  LoadAudio: { widgetName: 'audio', mediaType: 'audio' }
+}
+
+function isComboWidget(widget: IBaseWidget): widget is IComboWidget {
+  return widget.type === 'combo'
+}
+
+/**
+ * Scan combo widgets on media nodes for file values that may be missing.
+ *
+ * OSS: `isMissing` resolved immediately via widget options.
+ * Cloud: `isMissing` left `undefined` for async verification.
+ */
+export function scanAllMediaCandidates(
+  rootGraph: LGraph,
+  isCloud: boolean
+): MissingMediaCandidate[] {
+  if (!rootGraph) return []
+
+  const allNodes = collectAllNodes(rootGraph)
+  const candidates: MissingMediaCandidate[] = []
+
+  for (const node of allNodes) {
+    if (!node.widgets?.length) continue
+    if (node.isSubgraphNode?.()) continue
+    if (
+      node.mode === LGraphEventMode.NEVER ||
+      node.mode === LGraphEventMode.BYPASS
+    )
+      continue
+
+    candidates.push(...scanNodeMediaCandidates(rootGraph, node, isCloud))
+  }
+
+  return candidates
+}
+
+/** Scan a single node for missing media candidates (OSS immediate resolution). */
+export function scanNodeMediaCandidates(
+  rootGraph: LGraph,
+  node: LGraphNode,
+  isCloud: boolean
+): MissingMediaCandidate[] {
+  if (!node.widgets?.length) return []
+
+  const mediaInfo = MEDIA_NODE_WIDGETS[node.type]
+  if (!mediaInfo) return []
+
+  const executionId = getExecutionIdByNode(rootGraph, node)
+  if (!executionId) return []
+
+  const candidates: MissingMediaCandidate[] = []
+  for (const widget of node.widgets) {
+    if (!isComboWidget(widget)) continue
+    if (widget.name !== mediaInfo.widgetName) continue
+
+    const value = widget.value
+    if (typeof value !== 'string' || !value.trim()) continue
+
+    let isMissing: boolean | undefined
+    if (isCloud) {
+      isMissing = undefined
+    } else {
+      const options = resolveComboValues(widget)
+      isMissing = !options.includes(value)
+    }
+
+    candidates.push({
+      nodeId: executionId as NodeId,
+      nodeType: node.type,
+      widgetName: widget.name,
+      mediaType: mediaInfo.mediaType,
+      name: value,
+      isMissing
+    })
+  }
+
+  return candidates
+}
+
+type InputAssetFetcher = (signal?: AbortSignal) => Promise<AssetItem[]>
+
+/**
+ * Verify cloud media candidates against input assets available to the user,
+ * including public assets returned by the asset list API.
+ *
+ * A candidate's `name` may be either a filename or an opaque asset hash.
+ * Cloud-side `asset_hash` is not guaranteed to follow a single shape, so we
+ * match against the union of `asset.name` and `asset.asset_hash`.
+ */
+export async function verifyCloudMediaCandidates(
+  candidates: MissingMediaCandidate[],
+  signal?: AbortSignal,
+  fetchInputAssets: InputAssetFetcher = fetchMissingInputAssets
+): Promise<void> {
+  if (signal?.aborted) return
+
+  const pending = candidates.filter((c) => c.isMissing === undefined)
+  if (pending.length === 0) return
+
+  let inputAssets: AssetItem[]
+  try {
+    inputAssets = await fetchInputAssets(signal)
+  } catch (err) {
+    if (signal?.aborted || isAbortError(err)) return
+    throw err
+  }
+
+  if (signal?.aborted) return
+
+  const assetIdentifiers = new Set<string>()
+  for (const asset of inputAssets) {
+    if (asset.asset_hash) assetIdentifiers.add(asset.asset_hash)
+    if (asset.name) assetIdentifiers.add(asset.name)
+  }
+
+  for (const candidate of pending) {
+    candidate.isMissing = !assetIdentifiers.has(candidate.name)
+  }
+}
+
+async function fetchMissingInputAssets(
+  signal?: AbortSignal
+): Promise<AssetItem[]> {
+  return await assetService.getInputAssetsIncludingPublic(signal)
+}
+
+/** Group confirmed-missing candidates by file name into view models. */
+export function groupCandidatesByName(
+  candidates: MissingMediaCandidate[]
+): MissingMediaViewModel[] {
+  const map = new Map<string, MissingMediaViewModel>()
+  for (const c of candidates) {
+    const existing = map.get(c.name)
+    if (existing) {
+      existing.referencingNodes.push({
+        nodeId: c.nodeId,
+        widgetName: c.widgetName
+      })
+    } else {
+      map.set(c.name, {
+        name: c.name,
+        mediaType: c.mediaType,
+        referencingNodes: [{ nodeId: c.nodeId, widgetName: c.widgetName }]
+      })
+    }
+  }
+  return Array.from(map.values())
+}
+
+/** Group confirmed-missing candidates by media type. */
+export function groupCandidatesByMediaType(
+  candidates: MissingMediaCandidate[]
+): MissingMediaGroup[] {
+  const grouped = groupBy(candidates, (c) => c.mediaType)
+  const order: MediaType[] = ['image', 'video', 'audio']
+  return order
+    .filter((t) => t in grouped)
+    .map((mediaType) => ({
+      mediaType,
+      items: groupCandidatesByName(grouped[mediaType])
+    }))
+}

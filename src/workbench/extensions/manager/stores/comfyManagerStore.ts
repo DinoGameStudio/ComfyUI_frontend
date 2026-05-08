@@ -2,17 +2,20 @@ import { useEventListener, whenever } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { v4 as uuidv4 } from 'uuid'
 import { ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 
+import { t } from '@/i18n'
 import { useCachedRequest } from '@/composables/useCachedRequest'
 import { useServerLogs } from '@/composables/useServerLogs'
 import { api } from '@/scripts/api'
 import { app } from '@/scripts/app'
-import { useDialogService } from '@/services/dialogService'
+
 import { normalizePackKeys } from '@/utils/packUtils'
 import { useManagerQueue } from '@/workbench/extensions/manager/composables/useManagerQueue'
 import { useComfyManagerService } from '@/workbench/extensions/manager/services/comfyManagerService'
-import type { TaskLog } from '@/workbench/extensions/manager/types/comfyManagerTypes'
+import type {
+  NodePackId,
+  TaskLog
+} from '@/workbench/extensions/manager/types/comfyManagerTypes'
 import type { components } from '@/workbench/extensions/manager/types/generatedManagerTypes'
 
 type InstallPackParams = components['schemas']['InstallPackParams']
@@ -30,15 +33,13 @@ type UpdateAllPacksParams = components['schemas']['UpdateAllPacksParams']
  * Store for state of installed node packs
  */
 export const useComfyManagerStore = defineStore('comfyManager', () => {
-  const { t } = useI18n()
   const managerService = useComfyManagerService()
-  const { showManagerProgressDialog } = useDialogService()
 
   const installedPacks = ref<InstalledPacksResponse>({})
-  const enabledPacksIds = ref<Set<string>>(new Set())
-  const disabledPacksIds = ref<Set<string>>(new Set())
-  const installedPacksIds = ref<Set<string>>(new Set())
-  const installingPacksIds = ref<Set<string>>(new Set())
+  const enabledPacksIds = ref<Set<NodePackId>>(new Set())
+  const disabledPacksIds = ref<Set<NodePackId>>(new Set())
+  const installedPacksIds = ref<Set<NodePackId>>(new Set())
+  const installingPacksIds = ref<Set<NodePackId>>(new Set())
   const isStale = ref(true)
   const taskLogs = ref<TaskLog[]>([])
   const succeededTasksLogs = ref<TaskLog[]>([])
@@ -55,19 +56,23 @@ export const useComfyManagerStore = defineStore('comfyManager', () => {
   })
 
   // Track task ID to pack ID mapping for proper state cleanup
-  const taskIdToPackId = ref(new Map<string, string>())
+  const taskIdToPackId = ref(new Map<string, NodePackId>())
 
   const managerQueue = useManagerQueue(taskHistory, taskQueue, installedPacks)
 
   // Listen for task completion events to clean up installing state
-  useEventListener(app.api, 'cm-task-completed', (event: any) => {
-    const taskId = event.detail?.ui_id
-    if (taskId && taskIdToPackId.value.has(taskId)) {
-      const packId = taskIdToPackId.value.get(taskId)!
-      installingPacksIds.value.delete(packId)
-      taskIdToPackId.value.delete(taskId)
+  useEventListener(
+    app.api,
+    'cm-task-completed',
+    (event: CustomEvent<{ ui_id?: string }>) => {
+      const taskId = event.detail?.ui_id
+      if (taskId && taskIdToPackId.value.has(taskId)) {
+        const packId = taskIdToPackId.value.get(taskId)!
+        installingPacksIds.value.delete(packId)
+        taskIdToPackId.value.delete(taskId)
+      }
     }
-  })
+  )
 
   const setStale = () => {
     isStale.value = true
@@ -112,15 +117,15 @@ export const useComfyManagerStore = defineStore('comfyManager', () => {
 
   const getPackId = (pack: ManagerPackInstalled) => pack.cnr_id || pack.aux_id
 
-  const isInstalledPackId = (packName: string | undefined): boolean =>
+  const isInstalledPackId = (packName: NodePackId | undefined): boolean =>
     !!packName && installedPacksIds.value.has(packName)
 
-  const isEnabledPackId = (packName: string | undefined): boolean =>
+  const isEnabledPackId = (packName: NodePackId | undefined): boolean =>
     !!packName &&
     isInstalledPackId(packName) &&
     enabledPacksIds.value.has(packName)
 
-  const isInstallingPackId = (packName: string | undefined): boolean =>
+  const isInstallingPackId = (packName: NodePackId | undefined): boolean =>
     !!packName && installingPacksIds.value.has(packName)
 
   const packsToIdSet = (packs: ManagerPackInstalled[]) =>
@@ -128,7 +133,7 @@ export const useComfyManagerStore = defineStore('comfyManager', () => {
       const id = pack.cnr_id || pack.aux_id
       if (id) acc.add(id)
       return acc
-    }, new Set<string>())
+    }, new Set<NodePackId>())
 
   /**
    * A pack is disabled if there is a disabled entry and no corresponding
@@ -149,8 +154,8 @@ export const useComfyManagerStore = defineStore('comfyManager', () => {
    */
   const updateDisabledIds = (packs: ManagerPackInstalled[]) => {
     // Use temporary variables to avoid triggering reactivity
-    const enabledIds = new Set<string>()
-    const disabledIds = new Set<string>()
+    const enabledIds = new Set<NodePackId>()
+    const disabledIds = new Set<NodePackId>()
 
     for (const pack of packs) {
       const id = getPackId(pack)
@@ -204,8 +209,6 @@ export const useComfyManagerStore = defineStore('comfyManager', () => {
     })
 
     try {
-      // Show progress dialog immediately when task is queued
-      showManagerProgressDialog()
       managerQueue.isProcessing.value = true
 
       // Prepare logging hook
@@ -326,7 +329,7 @@ export const useComfyManagerStore = defineStore('comfyManager', () => {
     await enqueueTaskWithLogs(task, t('g.enabling', { id: params.id }))
   }
 
-  const getInstalledPackVersion = (packId: string) => {
+  const getInstalledPackVersion = (packId: NodePackId) => {
     const pack = installedPacks.value[packId]
     return pack?.ver
   }
@@ -392,44 +395,3 @@ export const useComfyManagerStore = defineStore('comfyManager', () => {
     enablePack
   }
 })
-
-/**
- * Store for state of the manager progress dialog content.
- * The dialog itself is managed by the dialog store. This store is used to
- * manage the visibility of the dialog's content, header, footer.
- */
-export const useManagerProgressDialogStore = defineStore(
-  'managerProgressDialog',
-  () => {
-    const isExpanded = ref(false)
-    const activeTabIndex = ref(0)
-
-    const setActiveTabIndex = (index: number) => {
-      activeTabIndex.value = index
-    }
-
-    const getActiveTabIndex = () => {
-      return activeTabIndex.value
-    }
-
-    const toggle = () => {
-      isExpanded.value = !isExpanded.value
-    }
-
-    const collapse = () => {
-      isExpanded.value = false
-    }
-
-    const expand = () => {
-      isExpanded.value = true
-    }
-    return {
-      isExpanded,
-      toggle,
-      collapse,
-      expand,
-      setActiveTabIndex,
-      getActiveTabIndex
-    }
-  }
-)

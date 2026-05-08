@@ -1,6 +1,6 @@
 <template>
   <div :class="topStyle">
-    <slot class="absolute top-0 left-0 h-full w-full"></slot>
+    <slot class="absolute top-0 left-0 size-full"></slot>
 
     <div v-if="slots['top-left']" :class="slotClasses['top-left']">
       <slot name="top-left"></slot>
@@ -31,7 +31,7 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue'
 
-import { cn } from '@/utils/tailwindUtil'
+import { cn } from '@comfyorg/tailwind-utils'
 
 const slots = useSlots()
 

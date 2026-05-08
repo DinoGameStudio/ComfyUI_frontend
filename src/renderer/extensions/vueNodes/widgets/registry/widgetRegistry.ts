@@ -48,15 +48,26 @@ const WidgetRecordAudio = defineAsyncComponent(
 const AudioPreviewPlayer = defineAsyncComponent(
   () => import('../components/audio/AudioPreviewPlayer.vue')
 )
-const WidgetAudioUI = defineAsyncComponent(
-  () => import('../components/WidgetAudioUI.vue')
-)
 const Load3D = defineAsyncComponent(
   () => import('@/components/load3d/Load3D.vue')
 )
+const WidgetImageCrop = defineAsyncComponent(
+  () => import('@/components/imagecrop/WidgetImageCrop.vue')
+)
+const WidgetBoundingBox = defineAsyncComponent(
+  () => import('@/components/boundingbox/WidgetBoundingBox.vue')
+)
+const WidgetCurve = defineAsyncComponent(
+  () => import('@/components/curve/WidgetCurve.vue')
+)
+const WidgetPainter = defineAsyncComponent(
+  () => import('@/components/painter/WidgetPainter.vue')
+)
+const WidgetRange = defineAsyncComponent(
+  () => import('@/components/range/WidgetRange.vue')
+)
 
 export const FOR_TESTING = {
-  WidgetAudioUI,
   WidgetButton,
   WidgetColorPicker,
   WidgetInputNumber,
@@ -91,7 +102,7 @@ const coreWidgetDefinitions: Array<[string, WidgetDefinition]> = [
     'float',
     {
       component: WidgetInputNumber,
-      aliases: ['FLOAT', 'number', 'slider'],
+      aliases: ['FLOAT', 'number', 'slider', 'gradientslider'],
       essential: true
     }
   ],
@@ -157,12 +168,48 @@ const coreWidgetDefinitions: Array<[string, WidgetDefinition]> = [
       essential: false
     }
   ],
-  ['load3D', { component: Load3D, aliases: ['LOAD_3D'], essential: false }]
+  ['load3D', { component: Load3D, aliases: ['LOAD_3D'], essential: false }],
+  [
+    'imagecrop',
+    {
+      component: WidgetImageCrop,
+      aliases: ['IMAGECROP'],
+      essential: false
+    }
+  ],
+  [
+    'boundingbox',
+    {
+      component: WidgetBoundingBox,
+      aliases: ['BOUNDING_BOX'],
+      essential: false
+    }
+  ],
+  [
+    'curve',
+    {
+      component: WidgetCurve,
+      aliases: ['CURVE'],
+      essential: false
+    }
+  ],
+  [
+    'painter',
+    {
+      component: WidgetPainter,
+      aliases: ['PAINTER'],
+      essential: false
+    }
+  ],
+  [
+    'range',
+    {
+      component: WidgetRange,
+      aliases: ['RANGE'],
+      essential: false
+    }
+  ]
 ]
-
-const getComboWidgetAdditions = (): Map<string, Component> => {
-  return new Map([['audio', WidgetAudioUI]])
-}
 
 // Build lookup maps
 const widgets = new Map<string, WidgetDefinition>()
@@ -178,13 +225,7 @@ for (const [type, def] of coreWidgetDefinitions) {
 // Utility functions
 const getCanonicalType = (type: string): string => aliasMap.get(type) || type
 
-export const getComponent = (type: string, name: string): Component | null => {
-  if (type == 'combo') {
-    const comboAdditions = getComboWidgetAdditions()
-    if (comboAdditions.has(name)) {
-      return comboAdditions.get(name) || null
-    }
-  }
+export const getComponent = (type: string): Component | null => {
   const canonicalType = getCanonicalType(type)
   return widgets.get(canonicalType)?.component || null
 }
@@ -198,7 +239,15 @@ export const shouldRenderAsVue = (widget: Partial<SafeWidgetData>): boolean => {
   return !widget.options?.canvasOnly && !!widget.type
 }
 
-const EXPANDING_TYPES = ['textarea', 'markdown', 'load3D'] as const
+const EXPANDING_TYPES = [
+  'textarea',
+  'markdown',
+  'load3D',
+  'curve',
+  'painter',
+  'imagecompare',
+  'range'
+] as const
 
 export function shouldExpand(type: string): boolean {
   const canonicalType = getCanonicalType(type)

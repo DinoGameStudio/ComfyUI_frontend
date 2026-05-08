@@ -5,30 +5,27 @@
   <div v-else-if="error" class="flex h-full items-center justify-center p-8">
     <div class="max-w-[100vw] p-2 text-center lg:w-96">
       <p class="mb-4 text-red-500">{{ errorMessage }}</p>
-      <Button
-        :label="
+      <Button :loading="isRetrying" class="w-full" @click="handleRetry">
+        {{
           isRetrying
             ? $t('cloudOnboarding.retrying')
             : $t('cloudOnboarding.retry')
-        "
-        :loading="isRetrying"
-        class="w-full"
-        @click="handleRetry"
-      />
+        }}
+      </Button>
     </div>
   </div>
   <div v-else class="flex items-center justify-center">
-    <ProgressSpinner class="h-8 w-8" />
+    <ProgressSpinner class="size-8" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { useAsyncState } from '@vueuse/core'
-import Button from 'primevue/button'
 import ProgressSpinner from 'primevue/progressspinner'
 import { computed, nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import Button from '@/components/ui/button/Button.vue'
 import { useErrorHandling } from '@/composables/useErrorHandling'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import {
@@ -81,7 +78,7 @@ const {
     }
 
     // User is fully onboarded (active or whitelist check disabled)
-    window.location.href = '/'
+    globalThis.location.href = '/'
   }),
   null,
   { resetOnExecute: false }

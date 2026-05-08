@@ -1,12 +1,12 @@
 // For more info, see https://github.com/storybookjs/eslint-plugin-storybook#configuration-flat-config-format
 import pluginJs from '@eslint/js'
 import pluginI18n from '@intlify/eslint-plugin-vue-i18n'
+import betterTailwindcss from 'eslint-plugin-better-tailwindcss'
 import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript'
 import { importX } from 'eslint-plugin-import-x'
 import oxlint from 'eslint-plugin-oxlint'
-// WORKAROUND: eslint-plugin-prettier causes segfault on Node.js 24 + Windows
-// See: https://github.com/nodejs/node/issues/58690
-// Prettier is still run separately in lint-staged, so this is safe to disable
+import testingLibrary from 'eslint-plugin-testing-library'
+// eslint-config-prettier disables ESLint rules that conflict with formatters (oxfmt)
 import eslintConfigPrettier from 'eslint-config-prettier'
 import { configs as storybookConfigs } from 'eslint-plugin-storybook'
 import unusedImports from 'eslint-plugin-unused-imports'
@@ -24,7 +24,10 @@ const extraFileExtensions = ['.vue']
 
 const commonGlobals = {
   ...globals.browser,
-  __COMFYUI_FRONTEND_VERSION__: 'readonly'
+  __COMFYUI_FRONTEND_VERSION__: 'readonly',
+  __COMFYUI_FRONTEND_COMMIT__: 'readonly',
+  __DISTRIBUTION__: 'readonly',
+  __IS_NIGHTLY__: 'readonly'
 } as const
 
 const settings = {
@@ -33,6 +36,7 @@ const settings = {
       alwaysTryTypes: true,
       project: [
         './tsconfig.json',
+        './browser_tests/tsconfig.json',
         './apps/*/tsconfig.json',
         './packages/*/tsconfig.json'
       ],
@@ -61,6 +65,13 @@ const commonParserOptions = {
   extraFileExtensions
 } as const
 
+const useVirtualListRestriction = {
+  name: '@vueuse/core',
+  importNames: ['useVirtualList'],
+  message:
+    'useVirtualList requires uniform item heights. Use TanStack Virtual (via Reka UI virtualizer or @tanstack/vue-virtual) instead.'
+} as const
+
 export default defineConfig([
   {
     ignores: [
@@ -77,6 +88,7 @@ export default defineConfig([
       'src/scripts/*',
       'src/types/generatedManagerTypes.ts',
       'src/types/vue-shim.d.ts',
+      'packages/design-system/src/css/lucideStrokePlugin.js',
       'test-results/*',
       'vitest.setup.ts'
     ]
@@ -111,7 +123,26 @@ export default defineConfig([
   tseslintConfigs.recommended,
   // Difference in typecheck on CI vs Local
   pluginVue.configs['flat/recommended'],
-  // Use eslint-config-prettier instead of eslint-plugin-prettier to avoid Node 24 segfault
+  // Tailwind CSS v4 linting (class ordering, duplicates, conflicts, etc.)
+  betterTailwindcss.configs.recommended,
+  {
+    settings: {
+      'better-tailwindcss': {
+        entryPoint: 'packages/design-system/src/css/style.css'
+      }
+    },
+    rules: {
+      // Off: requires whitelisting non-Tailwind classes (PrimeIcons, custom CSS)
+      'better-tailwindcss/no-unknown-classes': 'off',
+      // Off: may conflict with oxfmt formatting
+      'better-tailwindcss/enforce-consistent-line-wrapping': 'off',
+      // Off: large batch change, enable and apply with `eslint --fix`
+      'better-tailwindcss/enforce-consistent-class-order': 'error',
+      'better-tailwindcss/enforce-canonical-classes': 'error',
+      'better-tailwindcss/no-deprecated-classes': 'error'
+    }
+  },
+  // Disables ESLint rules that conflict with formatters
   eslintConfigPrettier,
   // @ts-expect-error Type incompatibility between storybook plugin and ESLint config types
   storybookConfigs['flat/recommended'],
@@ -130,13 +161,6 @@ export default defineConfig([
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/prefer-as-const': 'off',
       '@typescript-eslint/consistent-type-imports': 'error',
-      '@typescript-eslint/no-import-type-side-effects': 'error',
-      '@typescript-eslint/no-empty-object-type': [
-        'error',
-        {
-          allowInterfaces: 'always'
-        }
-      ],
       'import-x/no-useless-path-segments': 'error',
       'import-x/no-relative-packages': 'error',
       'unused-imports/no-unused-imports': 'error',
@@ -208,23 +232,62 @@ export default defineConfig([
     }
   },
   {
-    files: ['tests-ui/**/*'],
+    name: 'comfy/no-unsafe-error-assertion',
+    files: [
+      'src/**/*.ts',
+      'src/**/*.tsx',
+      'src/**/*.vue',
+      'apps/*/src/**/*.ts',
+      'apps/*/src/**/*.tsx',
+      'apps/*/src/**/*.vue'
+    ],
+    ignores: ['**/*.test.ts', '**/*.spec.ts'],
     rules: {
-      '@typescript-eslint/consistent-type-imports': [
+      'no-restricted-syntax': [
         'error',
-        { disallowTypeAnnotations: false }
+        {
+          // Bans `value as Error` and `value as Error & { ... }`.
+          // Use `error instanceof Error` narrowing or `toError()` from
+          // @/utils/errorUtil instead — see issue #11429.
+          selector: "TSAsExpression TSTypeReference[typeName.name='Error']",
+          message:
+            'Do not use Error type assertions. Use `instanceof Error` narrowing or `toError()` from @/utils/errorUtil instead. See issue #11429.'
+        },
+        {
+          // Bans `<Error>value` and `<Error & { ... }>value`.
+          selector: "TSTypeAssertion TSTypeReference[typeName.name='Error']",
+          message:
+            'Do not use Error type assertions. Use `instanceof Error` narrowing or `toError()` from @/utils/errorUtil instead. See issue #11429.'
+        }
       ]
     }
   },
   {
     files: ['**/*.spec.ts'],
-    ignores: ['browser_tests/tests/**/*.spec.ts'],
+    ignores: ['browser_tests/tests/**/*.spec.ts', 'apps/*/e2e/**/*.spec.ts'],
     rules: {
       'no-restricted-syntax': [
         'error',
         {
           selector: 'Program',
-          message: '.spec.ts files are only allowed under browser_tests/tests/'
+          message:
+            '.spec.ts files are only allowed under browser_tests/tests/ or apps/*/e2e/'
+        }
+      ]
+    }
+  },
+  // fixtures/data/ must contain only static data — no executable code or
+  // Playwright imports. This enforces the architectural separation documented
+  // in browser_tests/AGENTS.md.
+  {
+    files: ['browser_tests/fixtures/data/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'ImportDeclaration[source.value=/^@playwright/]',
+          message:
+            'fixtures/data/ must contain only static data. No Playwright imports allowed.'
         }
       ]
     }
@@ -240,6 +303,40 @@ export default defineConfig([
             '.test.ts files are not allowed in browser_tests/tests/; use .spec.ts instead'
         }
       ]
+    }
+  },
+  {
+    files: ['**/*.test.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'vi',
+          property: 'doMock',
+          message:
+            'Use vi.mock() with vi.hoisted() instead of vi.doMock(). See docs/testing/vitest-patterns.md'
+        }
+      ],
+      // Tests routinely define stub and harness components side-by-side with
+      // the system under test and stub emits for documentation only — these
+      // production-SFC rules are noise in a test file.
+      'vue/one-component-per-file': 'off',
+      'vue/no-reserved-component-names': 'off',
+      'vue/no-unused-emit-declarations': 'off'
+    }
+  },
+  {
+    files: ['**/*.test.ts'],
+    plugins: { 'testing-library': testingLibrary },
+    rules: {
+      'testing-library/prefer-screen-queries': 'error',
+      'testing-library/no-container': 'error',
+      'testing-library/no-node-access': 'error',
+      'testing-library/no-wait-for-multiple-assertions': 'error',
+      'testing-library/prefer-find-by': 'error',
+      'testing-library/prefer-presence-queries': 'error',
+      'testing-library/prefer-user-event': 'error',
+      'testing-library/no-debugging-utils': 'error'
     }
   },
   {
@@ -266,6 +363,182 @@ export default defineConfig([
       'import-x/namespace': 'off',
       'import-x/no-duplicates': 'off',
       'import-x/consistent-type-specifier-style': 'off'
+    }
+  },
+
+  // Layer architecture boundary enforcement
+  // Layers (bottom to top): base → platform → workbench → renderer
+  // Each layer may only import from layers below it.
+  // Existing violations are suppressed with eslint-disable comments.
+  {
+    files: [
+      'src/base/**/*.{ts,vue}',
+      'src/platform/**/*.{ts,vue}',
+      'src/workbench/**/*.{ts,vue}'
+    ],
+    rules: {
+      'import-x/no-restricted-paths': [
+        'error',
+        {
+          zones: [
+            {
+              target: './src/base/**',
+              from: [
+                './src/platform/**',
+                './src/workbench/**',
+                './src/renderer/**'
+              ],
+              message:
+                'base/ cannot import from upper layers (violates layer architecture: base → platform → workbench → renderer)'
+            },
+            {
+              target: './src/platform/**',
+              from: ['./src/workbench/**', './src/renderer/**'],
+              message:
+                'platform/ cannot import from upper layers (violates layer architecture: base → platform → workbench → renderer)'
+            },
+            {
+              target: './src/workbench/**',
+              from: './src/renderer/**',
+              message:
+                'workbench/ cannot import from renderer/ (violates layer architecture: base → platform → workbench → renderer)'
+            }
+          ]
+        }
+      ]
+    }
+  },
+
+  // The website app is a marketing site with no vue-i18n setup
+  {
+    files: ['apps/website/**/*.vue'],
+    rules: {
+      '@intlify/vue-i18n/no-raw-text': 'off'
+    }
+  },
+
+  // i18n import enforcement
+  // Vue components must use the useI18n() composable, not the global t/d/st/te
+  {
+    files: ['**/*.vue'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@/i18n',
+              importNames: ['t', 'd', 'te'],
+              message:
+                "In Vue components, use `const { t } = useI18n()` instead of importing from '@/i18n'."
+            },
+            useVirtualListRestriction
+          ]
+        }
+      ]
+    }
+  },
+  // Non-composable .ts files must use the global t/d/te, not useI18n()
+  {
+    files: ['**/*.ts'],
+    ignores: ['**/use[A-Z]*.ts', '**/*.test.ts', 'src/i18n.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'vue-i18n',
+              importNames: ['useI18n'],
+              message:
+                "useI18n() requires Vue setup context. Use `import { t } from '@/i18n'` instead."
+            },
+            useVirtualListRestriction
+          ]
+        }
+      ]
+    }
+  },
+  // Preserve the useVirtualList ban for files excluded from the useI18n rule.
+  {
+    files: ['**/use[A-Z]*.ts', '**/*.test.ts', 'src/i18n.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [useVirtualListRestriction]
+        }
+      ]
+    }
+  },
+  {
+    files: ['**/*.test.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@vue/test-utils',
+              message:
+                'Use @testing-library/vue with @testing-library/user-event instead.'
+            }
+          ]
+        }
+      ]
+    }
+  },
+  // Browser tests must use comfyPageFixture, not raw @playwright/test test
+  {
+    files: ['browser_tests/tests/**/*.spec.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@playwright/test',
+              importNames: ['test'],
+              message:
+                "Use `comfyPageFixture as test` from the ComfyPage fixture module instead of raw `test` from '@playwright/test'."
+            }
+          ],
+          patterns: [
+            {
+              group: ['./**', '../**'],
+              message: 'Use the @e2e/ path alias instead of relative imports.'
+            },
+            {
+              group: ['@e2e/helpers', '@e2e/helpers/*'],
+              message:
+                'browser_tests/helpers/ was removed. Use @e2e/fixtures/utils/, @e2e/fixtures/components/, or @e2e/fixtures/helpers/ instead.'
+            }
+          ]
+        }
+      ]
+    }
+  },
+  // Enforce @e2e/ alias — no relative imports in browser_tests (non-spec files)
+  {
+    files: ['browser_tests/**/*.ts'],
+    ignores: ['browser_tests/tests/**/*.spec.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['./**', '../**'],
+              message: 'Use the @e2e/ path alias instead of relative imports.'
+            },
+            {
+              group: ['@e2e/helpers', '@e2e/helpers/*'],
+              message:
+                'browser_tests/helpers/ was removed. Use @e2e/fixtures/utils/, @e2e/fixtures/components/, or @e2e/fixtures/helpers/ instead.'
+            }
+          ]
+        }
+      ]
     }
   }
 ])

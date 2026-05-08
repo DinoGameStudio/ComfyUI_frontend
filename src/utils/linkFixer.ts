@@ -24,6 +24,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+import type { INodeOutputSlot } from '@/lib/litegraph/src/interfaces'
 import type { NodeId } from '@/lib/litegraph/src/LGraphNode'
 import type { SerialisedLLinkArray } from '@/lib/litegraph/src/LLink'
 import type { LGraph, LGraphNode, LLink } from '@/lib/litegraph/src/litegraph'
@@ -79,12 +80,12 @@ export function fixBadLinks(
   options: {
     fix?: boolean
     silent?: boolean
-    logger?: { log: (...args: any[]) => void }
+    logger?: { log: (...args: unknown[]) => void }
   } = {}
 ): BadLinksData {
   const { fix = false, silent = false, logger: _logger = console } = options
   const logger = {
-    log: (...args: any[]) => {
+    log: (...args: unknown[]) => {
       if (!silent) {
         _logger.log(...args)
       }
@@ -135,9 +136,16 @@ export function fixBadLinks(
         return false
       }
       const linkIdToSet = op === 'REMOVE' ? null : linkId
+      const inputSlot = node.inputs?.[slot]
+      if (fix && !inputSlot) {
+        logger.log(
+          ` > Cannot patch ${node.id}.inputs[${slot}] because the input slot is missing.`
+        )
+        return false
+      }
       patchedNode['inputs']![slot] = linkIdToSet
       if (fix) {
-        // node.inputs[slot]!.link = linkIdToSet;
+        inputSlot!.link = linkIdToSet
       }
     } else {
       patchedNode['outputs'] = patchedNode['outputs'] || {}
@@ -166,7 +174,9 @@ export function fixBadLinks(
         patchedNode['outputs']![slot]!['links'].push(linkId)
         if (fix) {
           node.outputs = node.outputs || []
-          node.outputs[slot] = node.outputs[slot] || ({} as any)
+          node.outputs[slot] =
+            node.outputs[slot] ||
+            ({} satisfies Partial<INodeOutputSlot> as INodeOutputSlot)
           node.outputs[slot]!.links = node.outputs[slot]!.links || []
           node.outputs[slot]!.links!.push(linkId)
         }
@@ -428,7 +438,7 @@ export function fixBadLinks(
           (l) =>
             l &&
             (l[0] === data.deletedLinks[i] ||
-              (l as any).id === data.deletedLinks[i])
+              ('id' in l && l.id === data.deletedLinks[i]))
         )
         if (idx === -1) {
           logger.log(`INDEX NOT FOUND for #${data.deletedLinks[i]}`)
@@ -458,18 +468,17 @@ export function fixBadLinks(
     } stale link removals.`
   )
 
-  let hasBadLinks: boolean = !!(
-    data.patchedNodes.length || data.deletedLinks.length
-  )
+  const hasChanges = !!(data.patchedNodes.length || data.deletedLinks.length)
+  let hasBadLinks: boolean = hasChanges
   // If we're fixing, then let's run it again to see if there are no more bad links.
-  if (fix && !silent) {
+  if (fix) {
     const rerun = fixBadLinks(graph, { fix: false, silent: true })
     hasBadLinks = rerun.hasBadLinks
   }
 
   return {
     hasBadLinks,
-    fixed: !!hasBadLinks && fix,
+    fixed: fix && hasChanges && !hasBadLinks,
     graph,
     patched: data.patchedNodes.length,
     deleted: data.deletedLinks.length

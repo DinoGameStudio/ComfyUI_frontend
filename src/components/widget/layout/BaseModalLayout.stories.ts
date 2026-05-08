@@ -6,16 +6,15 @@ import MoreButton from '@/components/button/MoreButton.vue'
 import CardBottom from '@/components/card/CardBottom.vue'
 import CardContainer from '@/components/card/CardContainer.vue'
 import CardTop from '@/components/card/CardTop.vue'
-import SquareChip from '@/components/chip/SquareChip.vue'
-import MultiSelect from '@/components/input/MultiSelect.vue'
-import SearchBox from '@/components/common/SearchBox.vue'
-import SingleSelect from '@/components/input/SingleSelect.vue'
+import Tag from '@/components/chip/Tag.vue'
+import MultiSelect from '@/components/ui/multi-select/MultiSelect.vue'
+import SearchInput from '@/components/ui/search-input/SearchInput.vue'
+import SingleSelect from '@/components/ui/single-select/SingleSelect.vue'
 import type { NavGroupData, NavItemData } from '@/types/navTypes'
 import { OnCloseKey } from '@/types/widgetTypes'
 import { createGridStyle } from '@/utils/gridUtil'
 
 import LeftSidePanel from '../panel/LeftSidePanel.vue'
-import RightSidePanel from '../panel/RightSidePanel.vue'
 import BaseModalLayout from './BaseModalLayout.vue'
 
 interface StoryArgs {
@@ -69,8 +68,7 @@ const createStoryTemplate = (args: StoryArgs) => ({
   components: {
     BaseModalLayout,
     LeftSidePanel,
-    RightSidePanel,
-    SearchBox,
+    SearchInput,
     MultiSelect,
     SingleSelect,
     Button,
@@ -78,7 +76,7 @@ const createStoryTemplate = (args: StoryArgs) => ({
     CardContainer,
     CardTop,
     CardBottom,
-    SquareChip
+    Tag
   },
   setup() {
     const t = (k: string) => k
@@ -175,21 +173,20 @@ const createStoryTemplate = (args: StoryArgs) => ({
   template: `
     <div>
       <BaseModalLayout v-if="!args.hasRightPanel" :content-title="args.contentTitle || 'Content Title'">
+        <!-- Left Panel Header Title -->
+        <template v-if="args.hasLeftPanel" #leftPanelHeaderTitle>
+          <i class="icon-[lucide--puzzle] size-4 text-neutral" />
+          <span class="text-neutral text-base">Title</span>
+        </template>
+
         <!-- Left Panel -->
         <template v-if="args.hasLeftPanel" #leftPanel>
-          <LeftSidePanel v-model="selectedNavItem" :nav-items="tempNavigation">
-            <template #header-icon>
-              <i class="icon-[lucide--puzzle] size-4 text-neutral" />
-            </template>
-            <template #header-title>
-              <span class="text-neutral text-base">Title</span>
-            </template>
-          </LeftSidePanel>
+          <LeftSidePanel v-model="selectedNavItem" :nav-items="tempNavigation" />
         </template>
 
         <!-- Header -->
         <template v-if="args.hasHeader" #header>
-          <SearchBox
+          <SearchInput
             class="max-w-[384px]"
             size="lg"
             :modelValue="searchQuery"
@@ -279,13 +276,13 @@ const createStoryTemplate = (args: StoryArgs) => ({
                     </Button>
                   </template>
                   <template #bottom-right>
-                    <SquareChip label="png" />
-                    <SquareChip label="1.2 MB" />
-                    <SquareChip label="LoRA">
+                    <Tag label="png" />
+                    <Tag label="1.2 MB" />
+                    <Tag label="LoRA">
                       <template #icon>
                         <i class="icon-[lucide--folder] size-3" />
                       </template>
-                    </SquareChip>
+                    </Tag>
                   </template>
                 </CardTop>
               </template>
@@ -299,21 +296,20 @@ const createStoryTemplate = (args: StoryArgs) => ({
 
       <BaseModalLayout v-else :content-title="args.contentTitle || 'Content Title'">
         <!-- Same content but WITH right panel -->
+        <!-- Left Panel Header Title -->
+        <template v-if="args.hasLeftPanel" #leftPanelHeaderTitle>
+          <i class="icon-[lucide--puzzle] size-4 text-neutral" />
+          <span class="text-neutral text-base">Title</span>
+        </template>
+
         <!-- Left Panel -->
         <template v-if="args.hasLeftPanel" #leftPanel>
-          <LeftSidePanel v-model="selectedNavItem" :nav-items="tempNavigation">
-            <template #header-icon>
-              <i class="icon-[lucide--puzzle] size-4 text-neutral" />
-            </template>
-            <template #header-title>
-              <span class="text-neutral text-base">Title</span>
-            </template>
-          </LeftSidePanel>
+          <LeftSidePanel v-model="selectedNavItem" :nav-items="tempNavigation" />
         </template>
 
         <!-- Header -->
         <template v-if="args.hasHeader" #header>
-          <SearchBox
+          <SearchInput
             class="max-w-[384px]"
             size="lg"
             :modelValue="searchQuery"
@@ -396,13 +392,13 @@ const createStoryTemplate = (args: StoryArgs) => ({
                     </Button>
                   </template>
                   <template #bottom-right>
-                    <SquareChip label="png" />
-                    <SquareChip label="1.2 MB" />
-                    <SquareChip label="LoRA">
+                    <Tag label="png" />
+                    <Tag label="1.2 MB" />
+                    <Tag label="LoRA">
                       <template #icon>
                         <i class="icon-[lucide--folder] size-3" />
                       </template>
-                    </SquareChip>
+                    </Tag>
                   </template>
                 </CardTop>
               </template>
@@ -415,7 +411,7 @@ const createStoryTemplate = (args: StoryArgs) => ({
 
         <!-- Right Panel - Only when hasRightPanel is true -->
         <template #rightPanel>
-          <RightSidePanel />
+          <div class="size-full bg-modal-panel-background pr-6 pb-8 pl-4"></div>
         </template>
       </BaseModalLayout>
     </div>

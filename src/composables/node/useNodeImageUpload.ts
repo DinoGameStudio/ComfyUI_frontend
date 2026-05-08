@@ -1,13 +1,15 @@
 import { useNodeDragAndDrop } from '@/composables/node/useNodeDragAndDrop'
 import { useNodeFileInput } from '@/composables/node/useNodeFileInput'
 import { useNodePaste } from '@/composables/node/useNodePaste'
+import { t } from '@/i18n'
 import type { LGraphNode } from '@/lib/litegraph/src/litegraph'
 import { useToastStore } from '@/platform/updates/common/toastStore'
-import type { ResultItemType } from '@/schemas/apiSchema'
+import type { ResultItem, ResultItemType } from '@/schemas/apiSchema'
 import { api } from '@/scripts/api'
 import { useAssetsStore } from '@/stores/assetsStore'
 
 const PASTED_IMAGE_EXPIRY_MS = 2000
+const UPLOAD_TIMEOUT_MS = 120_000
 
 interface ImageUploadFormFields {
   /**
@@ -29,7 +31,8 @@ const uploadFile = async (
 
   const resp = await api.fetchApi('/upload/image', {
     method: 'POST',
-    body
+    body,
+    signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS)
   })
 
   if (resp.status !== 200) {
@@ -50,7 +53,7 @@ const uploadFile = async (
 
 interface ImageUploadOptions {
   fileFilter?: (file: File) => boolean
-  onUploadComplete: (paths: string[]) => void
+  onUploadComplete: (paths: (string | ResultItem)[]) => void
   allow_batch?: boolean
   /**
    * The file types to accept.
@@ -62,6 +65,8 @@ interface ImageUploadOptions {
    * @example 'input', 'output', 'temp'
    */
   folder?: ResultItemType
+  onUploadStart?: (files: File[]) => void
+  onUploadError?: () => void
 }
 
 /**
@@ -85,21 +90,45 @@ export const useNodeImageUpload = (
       if (!path) return
       return path
     } catch (error) {
-      useToastStore().addAlert(String(error))
+      if (error instanceof DOMException && error.name === 'TimeoutError') {
+        useToastStore().addAlert(t('g.uploadTimedOut'))
+      } else {
+        useToastStore().addAlert(String(error))
+      }
     }
   }
 
   const handleUploadBatch = async (files: File[]) => {
-    const paths = await Promise.all(files.map(handleUpload))
-    const validPaths = paths.filter((p): p is string => !!p)
-    if (validPaths.length) onUploadComplete(validPaths)
-    return validPaths
+    if (node.isUploading) {
+      useToastStore().addAlert(t('g.uploadAlreadyInProgress'))
+      return []
+    }
+    node.isUploading = true
+
+    try {
+      node.imgs = undefined
+      node.graph?.setDirtyCanvas(true)
+      options.onUploadStart?.(files)
+
+      const paths = await Promise.all(files.map(handleUpload))
+      const validPaths = paths.filter((p): p is string => !!p)
+      if (validPaths.length) {
+        onUploadComplete(validPaths)
+      } else {
+        options.onUploadError?.()
+      }
+      return validPaths
+    } finally {
+      node.isUploading = false
+      node.graph?.setDirtyCanvas(true)
+    }
   }
 
   // Handle drag & drop
   useNodeDragAndDrop(node, {
     fileFilter,
-    onDrop: handleUploadBatch
+    onDrop: handleUploadBatch,
+    onResultItemDrop: (item) => onUploadComplete([item])
   })
 
   // Handle paste

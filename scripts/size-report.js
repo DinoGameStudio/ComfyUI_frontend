@@ -175,15 +175,9 @@ async function buildBundleReport() {
  * @returns {string}
  */
 function renderReport(report) {
-  const parts = ['## Bundle Size Report\n']
-
-  parts.push(renderSummary(report))
+  const parts = [renderCompactHeader(report)]
 
   if (report.categories.length > 0) {
-    const glance = renderCategoryGlance(report)
-    if (glance) {
-      parts.push('\n' + glance)
-    }
     parts.push('\n' + renderCategoryDetails(report))
   }
 
@@ -193,6 +187,24 @@ function renderReport(report) {
       .replace(/\n{3,}/g, '\n\n')
       .trimEnd() + '\n'
   )
+}
+
+/**
+ * Render compact single-line header with key metrics
+ * @param {BundleReport} report
+ * @returns {string}
+ */
+function renderCompactHeader(report) {
+  const { overall, hasBaseline } = report
+
+  const gzipSize = prettyBytes(overall.metrics.current.gzip)
+  let header = `## 📦 Bundle: ${gzipSize} gzip`
+
+  if (hasBaseline) {
+    header += ` ${formatDiffIndicator(overall.metrics.diff.gzip)}`
+  }
+
+  return header
 }
 
 /**
@@ -310,7 +322,16 @@ function renderCategoryGlance(report) {
  * @returns {string}
  */
 function renderCategoryDetails(report) {
-  const lines = ['<details>', '<summary>Per-category breakdown</summary>', '']
+  const lines = ['<details>', '<summary>Details</summary>', '']
+
+  lines.push(renderSummary(report))
+  lines.push('')
+
+  const glance = renderCategoryGlance(report)
+  if (glance) {
+    lines.push(glance)
+    lines.push('')
+  }
 
   for (const category of report.categories) {
     lines.push(renderCategoryBlock(category, report.hasBaseline))
@@ -361,7 +382,13 @@ function renderCategoryBlock(category, hasBaseline) {
     ? ['File', 'Before', 'After', 'Δ Raw', 'Δ Gzip', 'Δ Brotli']
     : ['File', 'Size', 'Gzip', 'Brotli']
 
-  const rows = category.bundles
+  // Filter out unchanged bundles to keep report within GitHub's 65k char limit
+  const changedBundles = category.bundles.filter(
+    (b) => b.status !== 'unchanged'
+  )
+  const unchangedCount = category.bundles.length - changedBundles.length
+
+  const rows = changedBundles
     .slice()
     .sort((a, b) => {
       const diffMagnitude = Math.abs(b.diff.size) - Math.abs(a.diff.size)
@@ -388,8 +415,10 @@ function renderCategoryBlock(category, hasBaseline) {
       ]
     })
 
-  lines.push(markdownTable([headers, ...rows]))
-  lines.push('')
+  if (rows.length > 0) {
+    lines.push(markdownTable([headers, ...rows]))
+    lines.push('')
+  }
 
   const statusParts = []
   if (category.counts.added) statusParts.push(`${category.counts.added} added`)
@@ -399,6 +428,7 @@ function renderCategoryBlock(category, hasBaseline) {
     statusParts.push(`${category.counts.increased} grew`)
   if (category.counts.decreased)
     statusParts.push(`${category.counts.decreased} shrank`)
+  if (unchangedCount > 0) statusParts.push(`${unchangedCount} unchanged`)
 
   if (statusParts.length > 0) {
     lines.push(`_Status:_ ${statusParts.join(' / ')}`)

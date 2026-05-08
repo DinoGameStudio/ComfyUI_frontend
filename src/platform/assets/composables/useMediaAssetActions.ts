@@ -1,10 +1,10 @@
 import { useToast } from 'primevue/usetoast'
 import { inject } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import ConfirmationDialogContent from '@/components/dialog/content/ConfirmationDialogContent.vue'
 import { downloadFile } from '@/base/common/downloadUtil'
 import { useCopyToClipboard } from '@/composables/useCopyToClipboard'
-import { t } from '@/i18n'
 import { isCloud } from '@/platform/distribution/types'
 import { useWorkflowActionsService } from '@/platform/workflow/core/services/workflowActionsService'
 import { extractWorkflowFromAsset } from '@/platform/workflow/utils/workflowExtractionUtil'
@@ -14,17 +14,24 @@ import { useNodeDefStore } from '@/stores/nodeDefStore'
 import { getOutputAssetMetadata } from '../schemas/assetMetadataSchema'
 import { useAssetsStore } from '@/stores/assetsStore'
 import { useDialogStore } from '@/stores/dialogStore'
+import { getAssetDisplayName } from '../utils/assetMetadataUtils'
 import { getAssetType } from '../utils/assetTypeUtil'
 import { getAssetUrl } from '../utils/assetUrlUtil'
+import { getAssetOutputCount } from '../utils/outputAssetUtil'
 import { createAnnotatedPath } from '@/utils/createAnnotatedPath'
 import { detectNodeTypeFromFilename } from '@/utils/loaderNodeUtil'
 import { isResultItemType } from '@/utils/typeGuardUtil'
+
+import { useAssetExportStore } from '@/stores/assetExportStore'
 
 import type { AssetItem } from '../schemas/assetSchema'
 import { MediaAssetKey } from '../schemas/mediaAssetSchema'
 import { assetService } from '../services/assetService'
 
+const EXCLUDED_TAGS = new Set(['models', 'input', 'output'])
+
 export function useMediaAssetActions() {
+  const { t } = useI18n()
   const toast = useToast()
   const dialogStore = useDialogStore()
   const mediaContext = inject(MediaAssetKey, null)
@@ -43,12 +50,12 @@ export function useMediaAssetActions() {
     assetType: string
   ): Promise<void> => {
     if (assetType === 'output') {
-      const promptId =
-        asset.id || getOutputAssetMetadata(asset.user_metadata)?.promptId
-      if (!promptId) {
-        throw new Error('Unable to extract prompt ID from asset')
+      const jobId =
+        getOutputAssetMetadata(asset.user_metadata)?.jobId || asset.id
+      if (!jobId) {
+        throw new Error('Unable to extract job ID from asset')
       }
-      await api.deleteItem('history', promptId)
+      await api.deleteItem('history', jobId)
     } else {
       // Input assets can only be deleted in cloud environment
       if (!isCloud) {
@@ -58,68 +65,39 @@ export function useMediaAssetActions() {
     }
   }
 
-  const downloadAsset = (asset?: AssetItem) => {
-    const targetAsset = asset ?? mediaContext?.asset.value
-    if (!targetAsset) return
-
-    try {
-      const filename = targetAsset.name
-      let downloadUrl: string
-
-      // In cloud, use preview_url directly (from cloud storage)
-      // In OSS/localhost, use the /view endpoint
-      if (isCloud && targetAsset.preview_url) {
-        downloadUrl = targetAsset.preview_url
-      } else {
-        downloadUrl = getAssetUrl(targetAsset)
-      }
-
-      downloadFile(downloadUrl, filename)
-
-      toast.add({
-        severity: 'success',
-        summary: t('g.success'),
-        detail: t('g.downloadStarted'),
-        life: 2000
-      })
-    } catch (error) {
-      toast.add({
-        severity: 'error',
-        summary: t('g.error'),
-        detail: t('g.failedToDownloadImage'),
-        life: 3000
-      })
-    }
-  }
-
   /**
-   * Download multiple assets at once
-   * @param assets Array of assets to download
+   * Download one or more assets.
+   * In cloud mode, creates a ZIP export via the backend when called with
+   * 2+ assets or with any asset whose job has `outputCount > 1`.
+   * Falls back to direct downloads in OSS mode and for single single-output
+   * assets. With no argument, uses the asset from `MediaAssetKey` context.
    */
-  const downloadMultipleAssets = (assets: AssetItem[]) => {
-    if (!assets || assets.length === 0) return
+  const downloadAssets = (assets?: AssetItem[]) => {
+    const targetAssets =
+      assets ?? (mediaContext?.asset.value ? [mediaContext.asset.value] : [])
+    if (targetAssets.length === 0) return
+
+    const hasMultiOutputJobs = targetAssets.some((a) => {
+      const count = getOutputAssetMetadata(a.user_metadata)?.outputCount
+      return typeof count === 'number' && count > 1
+    })
+
+    if (isCloud && (targetAssets.length > 1 || hasMultiOutputJobs)) {
+      void downloadAssetsAsZip(targetAssets)
+      return
+    }
 
     try {
-      assets.forEach((asset) => {
-        const filename = asset.name
-        let downloadUrl: string
-
-        // In cloud, use preview_url directly (from GCS or other cloud storage)
-        // In OSS/localhost, use the /view endpoint
-        if (isCloud && asset.preview_url) {
-          downloadUrl = asset.preview_url
-        } else {
-          downloadUrl = getAssetUrl(asset)
-        }
+      targetAssets.forEach((asset) => {
+        const filename = getAssetDisplayName(asset)
+        const downloadUrl = asset.preview_url || getAssetUrl(asset)
         downloadFile(downloadUrl, filename)
       })
 
       toast.add({
         severity: 'success',
         summary: t('g.success'),
-        detail: t('mediaAsset.selection.downloadsStarted', {
-          count: assets.length
-        }),
+        detail: t('mediaAsset.selection.downloadsStarted', targetAssets.length),
         life: 2000
       })
     } catch (error) {
@@ -127,74 +105,87 @@ export function useMediaAssetActions() {
       toast.add({
         severity: 'error',
         summary: t('g.error'),
-        detail: t('g.failedToDownloadImage'),
-        life: 3000
+        detail: t('g.failedToDownloadImage')
       })
     }
   }
 
-  /**
-   * Show confirmation dialog and delete asset if confirmed
-   * @param asset The asset to delete
-   * @returns true if the asset was deleted, false otherwise
-   */
-  const confirmDelete = async (asset: AssetItem): Promise<boolean> => {
-    const assetType = getAssetType(asset)
-
-    return new Promise((resolve) => {
-      dialogStore.showDialog({
-        key: 'delete-asset-confirmation',
-        title: t('mediaAsset.deleteAssetTitle'),
-        component: ConfirmationDialogContent,
-        props: {
-          message: t('mediaAsset.deleteAssetDescription'),
-          type: 'delete',
-          itemList: [asset.name],
-          onConfirm: async () => {
-            const success = await deleteAsset(asset, assetType)
-            resolve(success)
-          },
-          onCancel: () => {
-            resolve(false)
-          }
-        }
-      })
-    })
-  }
-
-  const deleteAsset = async (asset: AssetItem, assetType: string) => {
-    const assetsStore = useAssetsStore()
+  async function downloadAssetsAsZip(assets: AssetItem[]) {
+    const assetExportStore = useAssetExportStore()
 
     try {
-      // Perform the deletion
-      await deleteAssetApi(asset, assetType)
+      const jobIds: string[] = []
+      const assetIds: string[] = []
+      const jobAssetNameFilters: Record<string, string[]> = {}
+      const countedOutputJobIds = new Set<string>()
+      let fileCount = 0
 
-      // Update the appropriate store based on asset type
-      if (assetType === 'output') {
-        await assetsStore.updateHistory()
-      } else {
-        await assetsStore.updateInputs()
+      for (const asset of assets) {
+        if (getAssetType(asset) === 'output') {
+          const metadata = getOutputAssetMetadata(asset.user_metadata)
+          const jobId = metadata?.jobId || asset.id
+          if (!jobIds.includes(jobId)) {
+            jobIds.push(jobId)
+          }
+          // Only add name filters when outputCount is unknown.
+          // When outputCount is set, the asset is a job-level selection
+          // from the gallery and the user wants all outputs for that job.
+          if (metadata?.outputCount != null) {
+            if (!countedOutputJobIds.has(jobId)) {
+              countedOutputJobIds.add(jobId)
+              fileCount += getAssetOutputCount(asset)
+            }
+          } else {
+            fileCount += 1
+          }
+
+          if (metadata?.jobId && asset.name && metadata.outputCount == null) {
+            if (!jobAssetNameFilters[metadata.jobId]) {
+              jobAssetNameFilters[metadata.jobId] = []
+            }
+            if (!jobAssetNameFilters[metadata.jobId].includes(asset.name)) {
+              jobAssetNameFilters[metadata.jobId].push(asset.name)
+            }
+          }
+        } else {
+          assetIds.push(asset.id)
+          fileCount += 1
+        }
       }
 
-      toast.add({
-        severity: 'success',
-        summary: t('g.success'),
-        detail: t('mediaAsset.assetDeletedSuccessfully'),
-        life: 2000
+      const spansMultipleJobs = jobIds.length > 1
+      const namingStrategy = spansMultipleJobs
+        ? 'group_by_job_time'
+        : 'preserve'
+
+      const result = await assetService.createAssetExport({
+        ...(jobIds.length > 0 ? { job_ids: jobIds } : {}),
+        ...(assetIds.length > 0 ? { asset_ids: assetIds } : {}),
+        ...(Object.keys(jobAssetNameFilters).length > 0
+          ? { job_asset_name_filters: jobAssetNameFilters }
+          : {}),
+        naming_strategy: namingStrategy
       })
-      return true
-    } catch (error) {
-      console.error('Failed to delete asset:', error)
-      const errorMessage = error instanceof Error ? error.message : ''
-      const isCloudWarning = errorMessage.includes('Cloud')
+
+      assetExportStore.trackExport(result.task_id)
 
       toast.add({
-        severity: isCloudWarning ? 'warn' : 'error',
-        summary: isCloudWarning ? t('g.warning') : t('g.error'),
-        detail: errorMessage || t('mediaAsset.failedToDeleteAsset'),
+        severity: 'info',
+        summary: t('exportToast.exportStarted'),
+        detail: t(
+          'mediaAsset.selection.exportStarted',
+          { count: fileCount },
+          fileCount
+        ),
         life: 3000
       })
-      return false
+    } catch (error) {
+      console.error('Failed to create asset export:', error)
+      toast.add({
+        severity: 'error',
+        summary: t('g.error'),
+        detail: t('exportToast.exportFailedSingle')
+      })
     }
   }
 
@@ -202,11 +193,12 @@ export function useMediaAssetActions() {
     const targetAsset = asset ?? mediaContext?.asset.value
     if (!targetAsset) return
 
-    // Try asset.id first (OSS), then fall back to metadata (Cloud)
     const metadata = getOutputAssetMetadata(targetAsset.user_metadata)
-    const promptId = targetAsset.id || metadata?.promptId
+    const jobId =
+      metadata?.jobId ||
+      (getAssetType(targetAsset) === 'output' ? targetAsset.id : undefined)
 
-    if (!promptId) {
+    if (!jobId) {
       toast.add({
         severity: 'warn',
         summary: t('g.warning'),
@@ -216,7 +208,7 @@ export function useMediaAssetActions() {
       return
     }
 
-    await copyToClipboard(promptId)
+    await copyToClipboard(jobId)
   }
 
   /**
@@ -247,8 +239,7 @@ export function useMediaAssetActions() {
       toast.add({
         severity: 'error',
         summary: t('g.error'),
-        detail: t('mediaAsset.nodeTypeNotFound', { nodeType }),
-        life: 3000
+        detail: t('mediaAsset.nodeTypeNotFound', { nodeType })
       })
       return
     }
@@ -261,8 +252,7 @@ export function useMediaAssetActions() {
       toast.add({
         severity: 'error',
         summary: t('g.error'),
-        detail: t('mediaAsset.failedToCreateNode'),
-        life: 3000
+        detail: t('mediaAsset.failedToCreateNode')
       })
       return
     }
@@ -271,10 +261,17 @@ export function useMediaAssetActions() {
     const metadata = getOutputAssetMetadata(targetAsset.user_metadata)
     const assetType = getAssetType(targetAsset, 'input')
 
+    // In Cloud mode, use asset_hash (the actual stored filename)
+    // In OSS mode, use the original name
+    const filename =
+      isCloud && targetAsset.asset_hash
+        ? targetAsset.asset_hash
+        : targetAsset.name
+
     // Create annotated path for the asset
     const annotated = createAnnotatedPath(
       {
-        filename: targetAsset.name,
+        filename,
         subfolder: metadata?.subfolder || '',
         type: isResultItemType(assetType) ? assetType : undefined
       },
@@ -365,30 +362,250 @@ export function useMediaAssetActions() {
   }
 
   /**
-   * Delete multiple assets with confirmation dialog
-   * @param assets Array of assets to delete
+   * Add multiple assets to the current workflow
+   * Creates loader nodes for each asset
    */
-  const deleteMultipleAssets = async (assets: AssetItem[]) => {
+  const addMultipleToWorkflow = async (assets: AssetItem[]) => {
     if (!assets || assets.length === 0) return
 
-    const assetsStore = useAssetsStore()
+    const NODE_OFFSET = 50
+    let nodeIndex = 0
+    let succeeded = 0
+    let failed = 0
 
-    return new Promise<void>((resolve) => {
+    for (const asset of assets) {
+      const { nodeType, widgetName } = detectNodeTypeFromFilename(asset.name)
+
+      if (!nodeType || !widgetName) {
+        failed++
+        continue
+      }
+
+      const nodeDef = nodeDefStore.nodeDefsByName[nodeType]
+      if (!nodeDef) {
+        failed++
+        continue
+      }
+
+      const center = litegraphService.getCanvasCenter()
+      const node = litegraphService.addNodeOnGraph(nodeDef, {
+        pos: [
+          center[0] + nodeIndex * NODE_OFFSET,
+          center[1] + nodeIndex * NODE_OFFSET
+        ]
+      })
+
+      if (!node) {
+        failed++
+        continue
+      }
+
+      const metadata = getOutputAssetMetadata(asset.user_metadata)
+      const assetType = getAssetType(asset, 'input')
+
+      // In Cloud mode, use asset_hash (the actual stored filename)
+      // In OSS mode, use the original name
+      const filename =
+        isCloud && asset.asset_hash ? asset.asset_hash : asset.name
+
+      const annotated = createAnnotatedPath(
+        {
+          filename,
+          subfolder: metadata?.subfolder || '',
+          type: isResultItemType(assetType) ? assetType : undefined
+        },
+        {
+          rootFolder: isResultItemType(assetType) ? assetType : undefined
+        }
+      )
+
+      const widget = node.widgets?.find((w) => w.name === widgetName)
+      if (widget) {
+        widget.value = annotated
+        widget.callback?.(annotated)
+      }
+      node.graph?.setDirtyCanvas(true, true)
+      succeeded++
+      nodeIndex++
+    }
+
+    if (failed === 0) {
+      toast.add({
+        severity: 'success',
+        summary: t('g.success'),
+        detail: t('mediaAsset.selection.nodesAddedToWorkflow', {
+          count: succeeded
+        }),
+        life: 2000
+      })
+    } else if (succeeded === 0) {
+      toast.add({
+        severity: 'error',
+        summary: t('g.error'),
+        detail: t('mediaAsset.selection.failedToAddNodes')
+      })
+    } else {
+      toast.add({
+        severity: 'warn',
+        summary: t('g.warning'),
+        detail: t('mediaAsset.selection.partialAddNodesSuccess', {
+          succeeded,
+          failed
+        }),
+        life: 3000
+      })
+    }
+  }
+
+  /**
+   * Open workflows from multiple assets in new tabs
+   */
+  const openMultipleWorkflows = async (assets: AssetItem[]) => {
+    if (!assets || assets.length === 0) return
+
+    let succeeded = 0
+    let failed = 0
+
+    for (const asset of assets) {
+      try {
+        const { workflow, filename } = await extractWorkflowFromAsset(asset)
+        const result = await workflowActions.openWorkflowAction(
+          workflow,
+          filename
+        )
+
+        if (result.success) {
+          succeeded++
+        } else {
+          failed++
+        }
+      } catch {
+        failed++
+      }
+    }
+
+    if (failed === 0) {
+      toast.add({
+        severity: 'success',
+        summary: t('g.success'),
+        detail: t('mediaAsset.selection.workflowsOpened', { count: succeeded }),
+        life: 2000
+      })
+    } else if (succeeded === 0) {
+      toast.add({
+        severity: 'warn',
+        summary: t('g.warning'),
+        detail: t('mediaAsset.selection.noWorkflowsFound'),
+        life: 3000
+      })
+    } else {
+      toast.add({
+        severity: 'warn',
+        summary: t('g.warning'),
+        detail: t('mediaAsset.selection.partialWorkflowsOpened', {
+          succeeded,
+          failed
+        }),
+        life: 3000
+      })
+    }
+  }
+
+  /**
+   * Export workflows from multiple assets as JSON files
+   */
+  const exportMultipleWorkflows = async (assets: AssetItem[]) => {
+    if (!assets || assets.length === 0) return
+
+    let succeeded = 0
+    let failed = 0
+
+    for (const asset of assets) {
+      try {
+        const { workflow, filename } = await extractWorkflowFromAsset(asset)
+        const result = await workflowActions.exportWorkflowAction(
+          workflow,
+          filename
+        )
+
+        if (result.success) {
+          succeeded++
+        } else {
+          failed++
+        }
+      } catch {
+        failed++
+      }
+    }
+
+    if (failed === 0) {
+      toast.add({
+        severity: 'success',
+        summary: t('g.success'),
+        detail: t('mediaAsset.selection.workflowsExported', {
+          count: succeeded
+        }),
+        life: 2000
+      })
+    } else if (succeeded === 0) {
+      toast.add({
+        severity: 'warn',
+        summary: t('g.warning'),
+        detail: t('mediaAsset.selection.noWorkflowsToExport'),
+        life: 3000
+      })
+    } else {
+      toast.add({
+        severity: 'warn',
+        summary: t('g.warning'),
+        detail: t('mediaAsset.selection.partialWorkflowsExported', {
+          succeeded,
+          failed
+        }),
+        life: 3000
+      })
+    }
+  }
+
+  /**
+   * Show confirmation dialog and delete asset(s) if confirmed
+   * @param assets Single asset or array of assets to delete
+   * @returns true if user confirmed and deletion was attempted, false if cancelled
+   */
+  const deleteAssets = async (
+    assets: AssetItem | AssetItem[]
+  ): Promise<boolean> => {
+    const assetArray = Array.isArray(assets) ? assets : [assets]
+    if (assetArray.length === 0) return false
+
+    const assetsStore = useAssetsStore()
+    const isSingle = assetArray.length === 1
+
+    return new Promise((resolve) => {
       dialogStore.showDialog({
-        key: 'delete-multiple-assets-confirmation',
-        title: t('mediaAsset.deleteSelectedTitle'),
+        key: 'delete-assets-confirmation',
+        title: isSingle
+          ? t('mediaAsset.deleteAssetTitle')
+          : t('mediaAsset.deleteSelectedTitle'),
         component: ConfirmationDialogContent,
         props: {
-          message: t('mediaAsset.deleteSelectedDescription', {
-            count: assets.length
-          }),
+          message: isSingle
+            ? t('mediaAsset.deleteAssetDescription')
+            : t('mediaAsset.deleteSelectedDescription', {
+                count: assetArray.length
+              }),
           type: 'delete',
-          itemList: assets.map((asset) => asset.name),
+          itemList: assetArray.map((asset) => getAssetDisplayName(asset)),
           onConfirm: async () => {
+            // Show loading overlay for all assets being deleted
+            assetArray.forEach((asset) =>
+              assetsStore.setAssetDeleting(asset.id, true)
+            )
+
             try {
               // Delete all assets using Promise.allSettled to track individual results
               const results = await Promise.allSettled(
-                assets.map((asset) =>
+                assetArray.map((asset) =>
                   deleteAssetApi(asset, getAssetType(asset))
                 )
               )
@@ -402,16 +619,16 @@ export function useMediaAssetActions() {
               // Log failed deletions for debugging
               failed.forEach((result, index) => {
                 console.warn(
-                  `Failed to delete asset ${assets[index].name}:`,
+                  `Failed to delete asset ${assetArray[index].name}:`,
                   result.reason
                 )
               })
 
               // Update stores after deletions
-              const hasOutputAssets = assets.some(
+              const hasOutputAssets = assetArray.some(
                 (a) => getAssetType(a) === 'output'
               )
-              const hasInputAssets = assets.some(
+              const hasInputAssets = assetArray.some(
                 (a) => getAssetType(a) === 'input'
               )
 
@@ -422,27 +639,45 @@ export function useMediaAssetActions() {
                 await assetsStore.updateInputs()
               }
 
+              // Invalidate model caches for affected categories
+              const modelCategories = new Set<string>()
+
+              for (const asset of assetArray) {
+                for (const tag of asset.tags ?? []) {
+                  if (EXCLUDED_TAGS.has(tag)) continue
+                  if (assetsStore.hasCategory(tag)) {
+                    modelCategories.add(tag)
+                  }
+                }
+              }
+
+              for (const category of modelCategories) {
+                assetsStore.invalidateModelsForCategory(category)
+              }
+
               // Show appropriate feedback based on results
               if (failed.length === 0) {
-                // All succeeded
                 toast.add({
                   severity: 'success',
                   summary: t('g.success'),
-                  detail: t('mediaAsset.selection.assetsDeletedSuccessfully', {
-                    count: succeeded
-                  }),
+                  detail: isSingle
+                    ? t('mediaAsset.assetDeletedSuccessfully')
+                    : t(
+                        'mediaAsset.selection.assetsDeletedSuccessfully',
+                        succeeded
+                      ),
                   life: 2000
                 })
               } else if (succeeded === 0) {
-                // All failed
                 toast.add({
                   severity: 'error',
                   summary: t('g.error'),
-                  detail: t('mediaAsset.selection.failedToDeleteAssets'),
-                  life: 3000
+                  detail: isSingle
+                    ? t('mediaAsset.failedToDeleteAsset')
+                    : t('mediaAsset.selection.failedToDeleteAssets')
                 })
               } else {
-                // Partial success
+                // Partial success (only possible with multiple assets)
                 toast.add({
                   severity: 'warn',
                   summary: t('g.warning'),
@@ -458,15 +693,21 @@ export function useMediaAssetActions() {
               toast.add({
                 severity: 'error',
                 summary: t('g.error'),
-                detail: t('mediaAsset.selection.failedToDeleteAssets'),
-                life: 3000
+                detail: isSingle
+                  ? t('mediaAsset.failedToDeleteAsset')
+                  : t('mediaAsset.selection.failedToDeleteAssets')
               })
+            } finally {
+              // Hide loading overlay for all assets
+              assetArray.forEach((asset) =>
+                assetsStore.setAssetDeleting(asset.id, false)
+              )
             }
 
-            resolve()
+            resolve(true)
           },
           onCancel: () => {
-            resolve()
+            resolve(false)
           }
         }
       })
@@ -474,14 +715,14 @@ export function useMediaAssetActions() {
   }
 
   return {
-    downloadAsset,
-    downloadMultipleAssets,
-    confirmDelete,
-    deleteAsset,
-    deleteMultipleAssets,
+    downloadAssets,
+    deleteAssets,
     copyJobId,
     addWorkflow,
+    addMultipleToWorkflow,
     openWorkflow,
-    exportWorkflow
+    openMultipleWorkflows,
+    exportWorkflow,
+    exportMultipleWorkflows
   }
 }

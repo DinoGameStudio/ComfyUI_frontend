@@ -11,10 +11,13 @@
     }"
     @click="onLogoMenuClick($event)"
   >
-    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-black">
+    <div class="grid place-items-center-safe gap-0.5">
+      <i
+        class="col-span-full row-span-full icon-[lucide--chevron-down] size-3 translate-x-4 text-muted-foreground"
+      />
       <ComfyLogo
         alt="ComfyUI Logo"
-        class="comfyui-logo h-[18px] w-[18px] text-white"
+        class="comfyui-logo col-span-full row-span-full size-4.5"
         mode="fill"
       />
     </div>
@@ -60,7 +63,7 @@
         />
         <span
           v-if="item?.comfyCommand?.keybinding"
-          class="keybinding-tag ml-auto rounded border border-surface p-1 text-xs text-nowrap text-muted"
+          class="keybinding-tag ml-auto rounded-sm border border-surface p-1 text-xs text-nowrap text-muted"
         >
           {{ item.comfyCommand.keybinding.combo.toString() }}
         </span>
@@ -108,15 +111,14 @@ import ToggleSwitch from 'primevue/toggleswitch'
 import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import SettingDialogHeader from '@/components/dialog/header/SettingDialogHeader.vue'
 import ComfyLogo from '@/components/icons/ComfyLogo.vue'
 import { useWorkflowTemplateSelectorDialog } from '@/composables/useWorkflowTemplateSelectorDialog'
-import SettingDialogContent from '@/platform/settings/components/SettingDialogContent.vue'
 import { useSettingStore } from '@/platform/settings/settingStore'
+import type { SettingPanelType } from '@/platform/settings/types'
 import { useTelemetry } from '@/platform/telemetry'
 import { useColorPaletteService } from '@/services/colorPaletteService'
+import { useSettingsDialog } from '@/platform/settings/composables/useSettingsDialog'
 import { useCommandStore } from '@/stores/commandStore'
-import { useDialogStore } from '@/stores/dialogStore'
 import { useMenuItemStore } from '@/stores/menuItemStore'
 import { useColorPaletteStore } from '@/stores/workspace/colorPaletteStore'
 import { normalizeI18nKey } from '@/utils/formatUtil'
@@ -129,7 +131,7 @@ const commandStore = useCommandStore()
 const menuItemStore = useMenuItemStore()
 const colorPaletteStore = useColorPaletteStore()
 const colorPaletteService = useColorPaletteService()
-const dialogStore = useDialogStore()
+const settingsDialog = useSettingsDialog()
 const managerState = useManagerState()
 const settingStore = useSettingStore()
 
@@ -166,15 +168,8 @@ const translateMenuItem = (item: MenuItem): MenuItem => {
   }
 }
 
-const showSettings = (defaultPanel?: string) => {
-  dialogStore.showDialog({
-    key: 'global-settings',
-    headerComponent: SettingDialogHeader,
-    component: SettingDialogContent,
-    props: {
-      defaultPanel
-    }
-  })
+const showSettings = (defaultPanel?: SettingPanelType) => {
+  settingsDialog.show(defaultPanel)
 }
 
 const showManageExtensions = async () => {
@@ -219,7 +214,7 @@ const extraMenuItems = computed(() => [
   {
     key: 'settings',
     label: t('g.settings'),
-    icon: 'mdi mdi-cog-outline',
+    icon: 'icon-[lucide--settings]',
     command: () => {
       telemetry?.trackUiButtonClicked({
         button_id: 'sidebar_settings_menu_opened'
@@ -230,7 +225,7 @@ const extraMenuItems = computed(() => [
   {
     key: 'manage-extensions',
     label: t('menu.manageExtensions'),
-    icon: 'mdi mdi-puzzle-outline',
+    icon: 'icon-[comfy--extensions-blocks]',
     command: showManageExtensions
   }
 ])

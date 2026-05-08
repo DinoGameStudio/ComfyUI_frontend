@@ -1,3 +1,4 @@
+import { createSharedComposable } from '@vueuse/core'
 import { computed, onUnmounted, ref } from 'vue'
 
 import type { LGraphNode } from '@/lib/litegraph/src/litegraph'
@@ -9,9 +10,8 @@ import { useSystemStatsStore } from '@/stores/systemStatsStore'
 import type { components } from '@/types/comfyRegistryTypes'
 import { mapAllNodes } from '@/utils/graphTraversalUtil'
 import { useNodePacks } from '@/workbench/extensions/manager/composables/nodePack/useNodePacks'
-import type { UseNodePacksOptions } from '@/workbench/extensions/manager/types/comfyManagerTypes'
 
-type WorkflowPack = {
+export type WorkflowPack = {
   id:
     | ComfyWorkflowJSON['nodes'][number]['properties']['cnr_id']
     | ComfyWorkflowJSON['nodes'][number]['properties']['aux_id']
@@ -22,14 +22,16 @@ const CORE_NODES_PACK_NAME = 'comfy-core'
 
 /**
  * Handles parsing node pack metadata from nodes on the graph and fetching the
- * associated node packs from the registry
+ * associated node packs from the registry.
+ * This is a shared singleton composable - all components use the same instance.
  */
-export const useWorkflowPacks = (options: UseNodePacksOptions = {}) => {
+const _useWorkflowPacks = () => {
   const nodeDefStore = useNodeDefStore()
   const systemStatsStore = useSystemStatsStore()
   const { inferPackFromNodeName } = useComfyRegistryStore()
 
   const workflowPacks = ref<WorkflowPack[]>([])
+  const unresolvedNodeNames = ref<string[]>([])
 
   const getWorkflowNodePackId = (node: LGraphNode): string | undefined => {
     if (typeof node.properties?.cnr_id === 'string') {
@@ -59,7 +61,7 @@ export const useWorkflowPacks = (options: UseNodePacksOptions = {}) => {
 
     // Check if node is a core node
     const nodeDef = nodeDefStore.nodeDefsByName[nodeName]
-    if (nodeDef?.nodeSource.type === 'core') {
+    if (nodeDef?.isCoreNode) {
       if (!systemStatsStore.systemStats) {
         await systemStatsStore.refetchSystemStats()
       }
@@ -110,12 +112,39 @@ export const useWorkflowPacks = (options: UseNodePacksOptions = {}) => {
 
   /**
    * Get the node packs for all nodes in the workflow (including subgraphs).
+   * Nodes that have no local definition and no registry match are tracked
+   * as unresolved so downstream consumers can surface them to the user.
    */
   const getWorkflowPacks = async () => {
-    if (!app.rootGraph) return []
-    const packPromises = mapAllNodes(app.rootGraph, workflowNodeToPack)
-    const packs = await Promise.all(packPromises)
-    workflowPacks.value = packs.filter((pack) => pack !== undefined)
+    if (!app.rootGraph) {
+      workflowPacks.value = []
+      unresolvedNodeNames.value = []
+      return
+    }
+
+    const resolvedPacks: WorkflowPack[] = []
+    const unresolved: string[] = []
+
+    await Promise.all(
+      mapAllNodes(app.rootGraph, async (node) => {
+        const pack = await workflowNodeToPack(node)
+        if (pack) {
+          resolvedPacks.push(pack)
+        } else {
+          const nodeName = node.type
+          if (
+            nodeName &&
+            getWorkflowNodePackId(node) === undefined &&
+            !nodeDefStore.nodeDefsByName[nodeName]
+          ) {
+            unresolved.push(nodeName)
+          }
+        }
+      })
+    )
+
+    workflowPacks.value = resolvedPacks
+    unresolvedNodeNames.value = [...new Set(unresolved)]
   }
 
   const packsToUniqueIds = (packs: WorkflowPack[]) =>
@@ -129,7 +158,7 @@ export const useWorkflowPacks = (options: UseNodePacksOptions = {}) => {
   )
 
   const { startFetch, cleanup, error, isLoading, nodePacks, isReady } =
-    useNodePacks(workflowPacksIds, options)
+    useNodePacks(workflowPacksIds)
 
   const isIdInWorkflow = (packId: string) =>
     workflowPacksIds.value.includes(packId)
@@ -146,6 +175,7 @@ export const useWorkflowPacks = (options: UseNodePacksOptions = {}) => {
     isLoading,
     isReady,
     workflowPacks: nodePacks,
+    unresolvedNodeNames,
     startFetchWorkflowPacks: async () => {
       await getWorkflowPacks() // Parse the packs from the workflow nodes
       await startFetch() // Fetch the packs infos from the registry
@@ -153,3 +183,5 @@ export const useWorkflowPacks = (options: UseNodePacksOptions = {}) => {
     filterWorkflowPack
   }
 }
+
+export const useWorkflowPacks = createSharedComposable(_useWorkflowPacks)

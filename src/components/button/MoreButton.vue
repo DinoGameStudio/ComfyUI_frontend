@@ -1,6 +1,11 @@
 <template>
   <div class="relative inline-flex items-center">
-    <Button size="icon" variant="secondary" @click="popover?.toggle">
+    <Button
+      size="icon"
+      variant="secondary"
+      v-bind="$attrs"
+      @click="popover?.toggle"
+    >
       <i
         :class="
           cn(
@@ -46,7 +51,10 @@
         }
       "
     >
-      <div class="flex min-w-40 flex-col gap-2 p-2">
+      <div
+        class="flex min-w-40 flex-col gap-2 p-2"
+        data-testid="more-menu-content"
+      >
         <slot :close="hide" />
       </div>
     </Popover>
@@ -58,7 +66,11 @@ import Popover from 'primevue/popover'
 import { ref } from 'vue'
 
 import Button from '@/components/ui/button/Button.vue'
-import { cn } from '@/utils/tailwindUtil'
+import { cn } from '@comfyorg/tailwind-utils'
+
+defineOptions({
+  inheritAttrs: false
+})
 
 interface MoreButtonProps {
   isVertical?: boolean

@@ -1,5 +1,5 @@
 # Description: Manual workflow to increment package version with semantic versioning support
-name: "Release: Version Bump"
+name: 'Release: Version Bump'
 
 on:
   workflow_dispatch:
@@ -30,6 +30,7 @@ concurrency:
 
 jobs:
   bump-version:
+    if: github.repository == 'Comfy-Org/ComfyUI_frontend'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -65,7 +66,7 @@ jobs:
 
       - name: Close stale nightly version bump PRs
         if: github.event_name == 'schedule'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ github.token }}
           script: |
@@ -118,7 +119,7 @@ jobs:
             core.info(`Closed ${closed.length} stale PR(s).`)
 
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.prepared-inputs.outputs.branch }}
           fetch-depth: 0
@@ -141,15 +142,27 @@ jobs:
           fi
           echo "✅ Branch '$BRANCH' exists"
 
+      - name: Ensure packageManager field exists
+        run: |
+          if ! grep -q '"packageManager"' package.json; then
+            # Old branches (e.g. core/1.42) predate the packageManager field.
+            # Inject it so pnpm/action-setup can resolve the version.
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+              pkg.packageManager = 'pnpm@10.33.0';
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            "
+            echo "Injected packageManager into package.json for legacy branch"
+          fi
+
       - name: Install pnpm
-        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
-        with:
-          version: 10
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version-file: '.nvmrc'
 
       - name: Bump version
         id: bump-version
@@ -180,7 +193,7 @@ jobs:
           echo "capitalised=${CAPITALISED_TYPE@u}" >> "$GITHUB_OUTPUT"
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e
+        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
         with:
           token: ${{ secrets.PR_GH_TOKEN }}
           commit-message: '[release] Increment version to ${{ steps.bump-version.outputs.NEW_VERSION }}'

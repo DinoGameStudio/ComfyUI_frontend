@@ -1,6 +1,7 @@
 import { computed } from 'vue'
 
-import { electronAPI, isElectron } from '@/utils/envUtil'
+import { isDesktop } from '@/platform/distribution/types'
+import { electronAPI } from '@/utils/envUtil'
 import { i18n } from '@/i18n'
 
 /**
@@ -30,7 +31,7 @@ export function useExternalLink() {
   })
 
   const platform = computed(() => {
-    if (!isElectron()) {
+    if (!isDesktop) {
       return null
     }
 
@@ -84,8 +85,8 @@ export function useExternalLink() {
   const staticUrls = {
     // Static external URLs
     discord: 'https://www.comfy.org/discord',
-    github: 'https://github.com/comfyanonymous/ComfyUI',
-    githubIssues: 'https://github.com/comfyanonymous/ComfyUI/issues',
+    github: 'https://github.com/Comfy-Org/ComfyUI',
+    githubIssues: 'https://github.com/Comfy-Org/ComfyUI/issues',
     githubFrontend: 'https://github.com/Comfy-Org/ComfyUI_frontend',
     githubElectron: 'https://github.com/Comfy-Org/electron',
     forum: 'https://forum.comfy.org/',

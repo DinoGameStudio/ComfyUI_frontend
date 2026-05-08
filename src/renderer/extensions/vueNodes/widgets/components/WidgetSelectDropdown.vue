@@ -1,24 +1,18 @@
 <script setup lang="ts">
-import { capitalize } from 'es-toolkit'
-import { computed, provide, ref, toRef, watch } from 'vue'
+import { computed, provide, ref, toRef } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { useTransformCompatOverlayProps } from '@/composables/useTransformCompatOverlayProps'
-import { t } from '@/i18n'
-import { useToastStore } from '@/platform/updates/common/toastStore'
+import { SUPPORTED_EXTENSIONS_ACCEPT } from '@/extensions/core/load3d/constants'
+import { useMediaAssets } from '@/platform/assets/composables/media/useMediaAssets'
 import FormDropdown from '@/renderer/extensions/vueNodes/widgets/components/form/dropdown/FormDropdown.vue'
 import { AssetKindKey } from '@/renderer/extensions/vueNodes/widgets/components/form/dropdown/types'
-import type {
-  DropdownItem,
-  FilterOption,
-  LayoutMode,
-  SelectedKey
-} from '@/renderer/extensions/vueNodes/widgets/components/form/dropdown/types'
+import type { LayoutMode } from '@/renderer/extensions/vueNodes/widgets/components/form/dropdown/types'
 import WidgetLayoutField from '@/renderer/extensions/vueNodes/widgets/components/layout/WidgetLayoutField.vue'
 import { useAssetWidgetData } from '@/renderer/extensions/vueNodes/widgets/composables/useAssetWidgetData'
+import { useWidgetSelectActions } from '@/renderer/extensions/vueNodes/widgets/composables/useWidgetSelectActions'
+import { useWidgetSelectItems } from '@/renderer/extensions/vueNodes/widgets/composables/useWidgetSelectItems'
 import type { ResultItemType } from '@/schemas/apiSchema'
-import { api } from '@/scripts/api'
-import { useAssetsStore } from '@/stores/assetsStore'
-import { useQueueStore } from '@/stores/queueStore'
 import type { SimplifiedWidget } from '@/types/simplifiedWidget'
 import type { AssetKind } from '@/types/widgetTypes'
 import {
@@ -32,6 +26,7 @@ interface Props {
   assetKind?: AssetKind
   allowUpload?: boolean
   uploadFolder?: ResultItemType
+  uploadSubfolder?: string
   isAssetMode?: boolean
   defaultLayoutMode?: LayoutMode
 }
@@ -45,12 +40,14 @@ provide(
 
 const modelValue = defineModel<string | undefined>({
   default(props: Props) {
-    return props.widget.options?.values?.[0] || ''
+    const values = props.widget.options?.values
+    return (Array.isArray(values) ? values[0] : undefined) ?? ''
   }
 })
 
-const toastStore = useToastStore()
-const queueStore = useQueueStore()
+const { t } = useI18n()
+
+const outputMediaAssets = useMediaAssets('output')
 
 const transformCompatProps = useTransformCompatOverlayProps()
 
@@ -60,112 +57,43 @@ const combinedProps = computed(() => ({
 }))
 
 const getAssetData = () => {
-  if (props.isAssetMode && props.nodeType) {
-    return useAssetWidgetData(toRef(() => props.nodeType))
+  const nodeType: string | undefined =
+    props.widget.options?.nodeType ?? props.nodeType
+  if (props.isAssetMode && nodeType) {
+    return useAssetWidgetData(toRef(nodeType))
   }
   return null
 }
 const assetData = getAssetData()
 
-const filterSelected = ref('all')
-const filterOptions = computed<FilterOption[]>(() => {
-  if (props.isAssetMode) {
-    const categoryName = assetData?.category.value ?? 'All'
-    return [{ id: 'all', name: capitalize(categoryName) }]
-  }
-  return [
-    { id: 'all', name: 'All' },
-    { id: 'inputs', name: 'Inputs' },
-    { id: 'outputs', name: 'Outputs' }
-  ]
+const {
+  dropdownItems,
+  displayItems,
+  filterSelected,
+  filterOptions,
+  ownershipSelected,
+  showOwnershipFilter,
+  ownershipOptions,
+  baseModelSelected,
+  showBaseModelFilter,
+  baseModelOptions,
+  selectedSet
+} = useWidgetSelectItems({
+  values: () => props.widget.options?.values as unknown[] | undefined,
+  getOptionLabel: () => props.widget.options?.getOptionLabel,
+  modelValue,
+  assetKind: () => props.assetKind,
+  outputMediaAssets,
+  assetData,
+  isAssetMode: () => props.isAssetMode
 })
 
-const selectedSet = ref<Set<SelectedKey>>(new Set())
-
-/**
- * Transforms a value using getOptionLabel if available.
- * Falls back to the original value if getOptionLabel is not provided or throws an error.
- */
-function getDisplayLabel(value: string): string {
-  const getOptionLabel = props.widget.options?.getOptionLabel
-  if (!getOptionLabel) return value
-
-  try {
-    return getOptionLabel(value)
-  } catch (e) {
-    console.error('Failed to map value:', e)
-    return value
-  }
-}
-
-const inputItems = computed<DropdownItem[]>(() => {
-  const values = props.widget.options?.values || []
-
-  if (!Array.isArray(values)) {
-    return []
-  }
-
-  return values.map((value: string, index: number) => ({
-    id: `input-${index}`,
-    mediaSrc: getMediaUrl(value, 'input'),
-    name: value,
-    label: getDisplayLabel(value),
-    metadata: ''
-  }))
-})
-const outputItems = computed<DropdownItem[]>(() => {
-  if (!['image', 'video'].includes(props.assetKind ?? '')) return []
-
-  const outputs = new Set<string>()
-
-  // Extract output images/videos from queue history
-  queueStore.historyTasks.forEach((task) => {
-    task.flatOutputs.forEach((output) => {
-      const isTargetType =
-        (props.assetKind === 'image' && output.mediaType === 'images') ||
-        (props.assetKind === 'video' && output.mediaType === 'video')
-
-      if (output.type === 'output' && isTargetType) {
-        const path = output.subfolder
-          ? `${output.subfolder}/${output.filename}`
-          : output.filename
-        // Add [output] annotation so the preview component knows the type
-        const annotatedPath = `${path} [output]`
-        outputs.add(annotatedPath)
-      }
-    })
-  })
-
-  return Array.from(outputs).map((output) => ({
-    id: `output-${output}`,
-    mediaSrc: getMediaUrl(output.replace(' [output]', ''), 'output'),
-    name: output,
-    label: getDisplayLabel(output),
-    metadata: ''
-  }))
-})
-
-const allItems = computed<DropdownItem[]>(() => {
-  if (props.isAssetMode && assetData) {
-    return assetData.dropdownItems.value
-  }
-  return [...inputItems.value, ...outputItems.value]
-})
-
-const dropdownItems = computed<DropdownItem[]>(() => {
-  if (props.isAssetMode) {
-    return allItems.value
-  }
-
-  switch (filterSelected.value) {
-    case 'inputs':
-      return inputItems.value
-    case 'outputs':
-      return outputItems.value
-    case 'all':
-    default:
-      return [...inputItems.value, ...outputItems.value]
-  }
+const { updateSelectedItems, handleFilesUpdate } = useWidgetSelectActions({
+  modelValue,
+  dropdownItems,
+  widget: () => props.widget,
+  uploadFolder: () => props.uploadFolder,
+  uploadSubfolder: () => props.uploadSubfolder
 })
 
 const mediaPlaceholder = computed(() => {
@@ -182,6 +110,8 @@ const mediaPlaceholder = computed(() => {
       return t('widgets.uploadSelect.placeholderVideo')
     case 'audio':
       return t('widgets.uploadSelect.placeholderAudio')
+    case 'mesh':
+      return t('widgets.uploadSelect.placeholderMesh')
     case 'model':
       return t('widgets.uploadSelect.placeholderModel')
     case 'unknown':
@@ -206,150 +136,46 @@ const acceptTypes = computed(() => {
       return 'video/*'
     case 'audio':
       return 'audio/*'
+    case 'mesh':
+      return SUPPORTED_EXTENSIONS_ACCEPT
     default:
-      return undefined // model or unknown
+      return undefined
   }
 })
 
 const layoutMode = ref<LayoutMode>(props.defaultLayoutMode ?? 'grid')
 
-watch(
-  [modelValue, dropdownItems],
-  ([currentValue, _dropdownItems]) => {
-    if (currentValue === undefined) {
-      selectedSet.value.clear()
-      return
-    }
-
-    const item = dropdownItems.value.find((item) => item.name === currentValue)
-    if (item) {
-      selectedSet.value.clear()
-      selectedSet.value.add(item.id)
-    }
-  },
-  { immediate: true }
-)
-
-function updateSelectedItems(selectedItems: Set<SelectedKey>) {
-  let id: SelectedKey | undefined = undefined
-  if (selectedItems.size > 0) {
-    id = selectedItems.values().next().value!
+function handleIsOpenUpdate(isOpen: boolean) {
+  if (isOpen && !outputMediaAssets.loading.value) {
+    void outputMediaAssets.refresh()
   }
-  if (id == null) {
-    modelValue.value = undefined
-    return
-  }
-  const name = dropdownItems.value.find((item) => item.id === id)?.name
-  if (!name) {
-    modelValue.value = undefined
-    return
-  }
-  modelValue.value = name
-}
-
-// Upload file function (copied from useNodeImageUpload.ts)
-const uploadFile = async (
-  file: File,
-  isPasted: boolean = false,
-  formFields: Partial<{ type: ResultItemType }> = {}
-) => {
-  const body = new FormData()
-  body.append('image', file)
-  if (isPasted) body.append('subfolder', 'pasted')
-  if (formFields.type) body.append('type', formFields.type)
-
-  const resp = await api.fetchApi('/upload/image', {
-    method: 'POST',
-    body
-  })
-
-  if (resp.status !== 200) {
-    toastStore.addAlert(resp.status + ' - ' + resp.statusText)
-    return null
-  }
-
-  const data = await resp.json()
-
-  // Update AssetsStore when uploading to input folder
-  if (formFields.type === 'input' || (!formFields.type && !isPasted)) {
-    const assetsStore = useAssetsStore()
-    await assetsStore.updateInputs()
-  }
-
-  return data.subfolder ? `${data.subfolder}/${data.name}` : data.name
-}
-
-// Handle multiple file uploads
-const uploadFiles = async (files: File[]): Promise<string[]> => {
-  const folder = props.uploadFolder ?? 'input'
-  const uploadPromises = files.map((file) =>
-    uploadFile(file, false, { type: folder })
-  )
-  const results = await Promise.all(uploadPromises)
-  return results.filter((path): path is string => path !== null)
-}
-
-async function handleFilesUpdate(files: File[]) {
-  if (!files || files.length === 0) return
-
-  try {
-    // 1. Upload files to server
-    const uploadedPaths = await uploadFiles(files)
-
-    if (uploadedPaths.length === 0) {
-      toastStore.addAlert('File upload failed')
-      return
-    }
-
-    // 2. Update widget options to include new files
-    // This simulates what addToComboValues does but for SimplifiedWidget
-    if (props.widget.options?.values) {
-      uploadedPaths.forEach((path) => {
-        const values = props.widget.options!.values as string[]
-        if (!values.includes(path)) {
-          values.push(path)
-        }
-      })
-    }
-
-    // 3. Update widget value to the first uploaded file
-    modelValue.value = uploadedPaths[0]
-
-    // 4. Trigger callback to notify underlying LiteGraph widget
-    if (props.widget.callback) {
-      props.widget.callback(uploadedPaths[0])
-    }
-  } catch (error) {
-    console.error('Upload error:', error)
-    toastStore.addAlert(`Upload failed: ${error}`)
-  }
-}
-
-function getMediaUrl(
-  filename: string,
-  type: 'input' | 'output' = 'input'
-): string {
-  if (!['image', 'video'].includes(props.assetKind ?? '')) return ''
-  return `/api/view?filename=${encodeURIComponent(filename)}&type=${type}`
 }
 </script>
 
 <template>
   <WidgetLayoutField :widget>
     <FormDropdown
-      v-model:selected="selectedSet"
       v-model:filter-selected="filterSelected"
       v-model:layout-mode="layoutMode"
+      v-model:ownership-selected="ownershipSelected"
+      v-model:base-model-selected="baseModelSelected"
+      :selected="selectedSet"
       :items="dropdownItems"
+      :display-items="displayItems"
       :placeholder="mediaPlaceholder"
       :multiple="false"
-      :uploadable="uploadable"
+      :uploadable
       :accept="acceptTypes"
-      :filter-options="filterOptions"
+      :filter-options
+      :show-ownership-filter
+      :ownership-options
+      :show-base-model-filter
+      :base-model-options
       v-bind="combinedProps"
       class="w-full"
       @update:selected="updateSelectedItems"
       @update:files="handleFilesUpdate"
+      @update:is-open="handleIsOpenUpdate"
     />
   </WidgetLayoutField>
 </template>

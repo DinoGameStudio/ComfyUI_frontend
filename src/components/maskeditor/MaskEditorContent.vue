@@ -1,9 +1,11 @@
 <template>
   <div
     ref="containerRef"
-    class="maskEditor-dialog-root flex h-full w-full flex-col"
+    data-testid="mask-editor-root"
+    class="maskEditor-dialog-root flex size-full flex-col"
     @contextmenu.prevent
     @dragstart="handleDragStart"
+    @keydown.stop
   >
     <div
       id="maskEditorCanvasContainer"
@@ -12,30 +14,32 @@
     >
       <canvas
         ref="imgCanvasRef"
-        class="absolute top-0 left-0 w-full h-full z-0"
+        class="absolute top-0 left-0 z-0 size-full"
         @contextmenu.prevent
       />
       <canvas
         ref="rgbCanvasRef"
-        class="absolute top-0 left-0 w-full h-full z-10"
+        class="absolute top-0 left-0 z-10 size-full"
         @contextmenu.prevent
       />
       <canvas
         ref="maskCanvasRef"
-        class="absolute top-0 left-0 w-full h-full z-30"
+        class="absolute top-0 left-0 z-30 size-full"
         @contextmenu.prevent
       />
       <!-- GPU Preview Canvas -->
       <canvas
         ref="gpuCanvasRef"
-        class="absolute top-0 left-0 w-full h-full pointer-events-none"
+        class="pointer-events-none absolute top-0 left-0 size-full"
         :class="{
           'z-20': store.activeLayer === 'rgb',
           'z-40': store.activeLayer === 'mask'
         }"
       />
-      <div ref="canvasBackgroundRef" class="bg-white w-full h-full" />
+      <div ref="canvasBackgroundRef" class="size-full" />
     </div>
+
+    <LoadingOverlay :loading="!initialized" size="sm" />
 
     <div class="maskEditor-ui-container flex min-h-0 flex-1 flex-col">
       <div class="flex min-h-0 flex-1 overflow-hidden">
@@ -75,6 +79,8 @@ import type { LGraphNode } from '@/lib/litegraph/src/litegraph'
 import { useDialogStore } from '@/stores/dialogStore'
 import { useMaskEditorDataStore } from '@/stores/maskEditorDataStore'
 import { useMaskEditorStore } from '@/stores/maskEditorStore'
+
+import LoadingOverlay from '@/components/common/LoadingOverlay.vue'
 
 import BrushCursor from './BrushCursor.vue'
 import PointerZone from './PointerZone.vue'
@@ -202,6 +208,7 @@ onBeforeUnmount(() => {
   }
 
   store.canvasHistory.clearStates()
+
   store.resetState()
   dataStore.reset()
 })

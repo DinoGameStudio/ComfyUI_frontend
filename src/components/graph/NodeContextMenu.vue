@@ -2,7 +2,7 @@
   <ContextMenu
     ref="contextMenu"
     :model="menuItems"
-    class="max-h-[80vh] md:max-h-none overflow-y-auto md:overflow-y-visible"
+    class="max-h-[80vh] overflow-y-auto md:max-h-none md:overflow-y-visible"
     @show="onMenuShow"
     @hide="onMenuHide"
   >
@@ -16,7 +16,7 @@
         <span class="flex-1">{{ item.label }}</span>
         <span
           v-if="item.shortcut"
-          class="flex h-3.5 min-w-3.5 items-center justify-center rounded bg-interface-menu-keybind-surface-default px-1 py-0 text-xs"
+          class="flex h-3.5 min-w-3.5 items-center justify-center rounded-sm bg-interface-menu-keybind-surface-default px-1 py-0 text-xs"
         >
           {{ item.shortcut }}
         </span>
@@ -220,6 +220,12 @@ function show(event: MouseEvent) {
     y: screenY / scale - offset[1]
   }
 
+  // Initialize last* values to current transform to prevent updateMenuPosition
+  // from overwriting PrimeVue's flip-adjusted position on the first RAF tick
+  lastScale = scale
+  lastOffsetX = offset[0]
+  lastOffsetY = offset[1]
+
   isOpen.value = true
   contextMenu.value?.show(event)
 }
@@ -254,8 +260,26 @@ function handleColorSelect(subOption: SubMenuOption) {
   hide()
 }
 
+function constrainMenuHeight() {
+  const menuInstance = contextMenu.value as unknown as {
+    container?: HTMLElement
+  }
+  const rootList = menuInstance?.container?.querySelector(
+    ':scope > ul'
+  ) as HTMLElement | null
+  if (!rootList) return
+
+  const rect = rootList.getBoundingClientRect()
+  const maxHeight = window.innerHeight - rect.top - 8
+  if (maxHeight > 0) {
+    rootList.style.maxHeight = `${maxHeight}px`
+    rootList.style.overflowY = 'auto'
+  }
+}
+
 function onMenuShow() {
   isOpen.value = true
+  requestAnimationFrame(constrainMenuHeight)
 }
 
 function onMenuHide() {

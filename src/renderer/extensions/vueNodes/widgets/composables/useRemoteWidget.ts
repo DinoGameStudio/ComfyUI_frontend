@@ -5,7 +5,7 @@ import type { IWidget, LGraphNode } from '@/lib/litegraph/src/litegraph'
 import { isCloud } from '@/platform/distribution/types'
 import type { RemoteWidgetConfig } from '@/schemas/nodeDefSchema'
 import { api } from '@/scripts/api'
-import { useFirebaseAuthStore } from '@/stores/firebaseAuthStore'
+import { useAuthStore } from '@/stores/authStore'
 
 const MAX_RETRIES = 5
 const TIMEOUT = 4096
@@ -23,7 +23,7 @@ interface CacheEntry<T> {
 
 async function getAuthHeaders() {
   if (isCloud) {
-    const authStore = useFirebaseAuthStore()
+    const authStore = useAuthStore()
     const authHeader = await authStore.getAuthHeader()
     return {
       ...(authHeader && { headers: authHeader })
@@ -32,7 +32,7 @@ async function getAuthHeaders() {
   return {}
 }
 
-const dataCache = new Map<string, CacheEntry<any>>()
+const dataCache = new Map<string, CacheEntry<unknown>>()
 
 const createCacheKey = (config: RemoteWidgetConfig): string => {
   const { route, query_params = {}, refresh = 0 } = config
@@ -49,7 +49,9 @@ const getBackoff = (retryCount: number) =>
   Math.min(1000 * Math.pow(2, retryCount), 512)
 
 const isInitialized = (entry: CacheEntry<unknown> | undefined) =>
-  entry?.data && entry?.timestamp && entry.timestamp > 0
+  entry?.data !== undefined &&
+  entry?.timestamp !== undefined &&
+  entry.timestamp > 0
 
 const isStale = (entry: CacheEntry<unknown> | undefined, ttl: number) =>
   entry?.timestamp && Date.now() - entry.timestamp >= ttl
@@ -128,9 +130,11 @@ export function useRemoteWidget<
     return !isLoaded && isInitialized(dataCache.get(cacheKey))
   }
 
-  const onFirstLoad = (data: T[]) => {
+  const onFirstLoad = (data: T | T[]) => {
     isLoaded = true
-    widget.value = data[0]
+    const nextValue =
+      Array.isArray(data) && data.length > 0 ? data[0] : undefined
+    widget.value = nextValue ?? (Array.isArray(data) ? defaultValue : data)
     widget.callback?.(widget.value)
     node.graph?.setDirtyCanvas(true)
   }
@@ -138,13 +142,16 @@ export function useRemoteWidget<
   const fetchValue = async () => {
     const entry = dataCache.get(cacheKey)
 
-    if (isFailed(entry)) return entry!.data
+    if (isFailed(entry)) return entry!.data as T
 
     const isValid =
       isInitialized(entry) && (isPermanent || !isStale(entry, refresh))
-    if (isValid || isBackingOff(entry) || isFetching(entry)) return entry!.data
+    if (isValid || isBackingOff(entry) || isFetching(entry))
+      return entry!.data as T
 
-    const currentEntry: CacheEntry<T> = entry || { data: defaultValue }
+    const currentEntry: CacheEntry<T> = (entry as
+      | CacheEntry<T>
+      | undefined) || { data: defaultValue }
     dataCache.set(cacheKey, currentEntry)
 
     try {

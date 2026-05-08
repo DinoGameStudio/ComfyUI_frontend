@@ -1,30 +1,36 @@
 <template>
-  <div class="relative show-slider">
-    <Button class="p-button-rounded p-button-text" @click="toggleSlider">
-      <i
-        v-tooltip.right="{ value: tooltipText, showDelay: 300 }"
-        :class="['pi', icon, 'text-lg text-white']"
-      />
+  <div class="show-slider relative">
+    <Button
+      v-tooltip.right="{ value: tooltipText, showDelay: 300 }"
+      size="icon"
+      variant="textonly"
+      class="rounded-full"
+      :aria-label="tooltipText"
+      @click="toggleSlider"
+    >
+      <i :class="['pi', icon, 'text-lg text-base-foreground']" />
     </Button>
     <div
       v-show="showSlider"
-      class="absolute top-0 left-12 rounded-lg bg-black/50 p-4 shadow-lg w-[150px]"
+      class="absolute top-0 left-12 w-[150px] rounded-lg bg-interface-menu-surface p-4 shadow-lg"
     >
       <Slider
-        v-model="value"
+        :model-value="sliderValue"
         class="w-full"
         :min="min"
         :max="max"
         :step="step"
+        @update:model-value="onSliderUpdate"
       />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import Button from 'primevue/button'
-import Slider from 'primevue/slider'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+
+import Button from '@/components/ui/button/Button.vue'
+import Slider from '@/components/ui/slider/Slider.vue'
 
 const {
   icon = 'pi-expand',
@@ -41,6 +47,12 @@ const {
 
 const value = defineModel<number>()
 const showSlider = ref(false)
+
+const sliderValue = computed(() => [value.value ?? min])
+
+function onSliderUpdate(val: number[] | undefined) {
+  if (val?.length) value.value = val[0]
+}
 
 const toggleSlider = () => {
   showSlider.value = !showSlider.value

@@ -1,24 +1,46 @@
 import { storeToRefs } from 'pinia'
-import { computed, readonly } from 'vue'
+import { computed, readonly, watch } from 'vue'
 
 import { t } from '@/i18n'
+import { useSettingsDialog } from '@/platform/settings/composables/useSettingsDialog'
 import { useToastStore } from '@/platform/updates/common/toastStore'
 import { api } from '@/scripts/api'
-import { useDialogService } from '@/services/dialogService'
 import { useCommandStore } from '@/stores/commandStore'
 import { useSystemStatsStore } from '@/stores/systemStatsStore'
-import { ManagerTab } from '@/workbench/extensions/manager/types/comfyManagerTypes'
+import { useManagerDialog } from '@/workbench/extensions/manager/composables/useManagerDialog'
+import type { ManagerTab } from '@/workbench/extensions/manager/types/comfyManagerTypes'
 
 export enum ManagerUIState {
   DISABLED = 'disabled',
   LEGACY_UI = 'legacy',
-  NEW_UI = 'new'
+  NEW_UI = 'new',
+  INCOMPATIBLE = 'incompatible'
+}
+
+/**
+ * Module-level flag to ensure the INCOMPATIBLE upgrade toast fires exactly
+ * once per app session, even when useManagerState() is invoked from many
+ * components. Without this, every consumer would register its own watcher
+ * and stack duplicate toasts on the first transition.
+ */
+let incompatibleToastShown = false
+
+const showIncompatibleToast = (): void => {
+  if (incompatibleToastShown) return
+  incompatibleToastShown = true
+  useToastStore().add({
+    severity: 'warn',
+    summary: t('manager.incompatibleVersion.title'),
+    detail: t('manager.incompatibleVersion.message'),
+    life: 15000
+  })
 }
 
 export function useManagerState() {
   const systemStatsStore = useSystemStatsStore()
   const { systemStats, isInitialized: systemInitialized } =
     storeToRefs(systemStatsStore)
+  const managerDialog = useManagerDialog()
 
   /**
    * The current manager UI state.
@@ -41,6 +63,10 @@ export function useManagerState() {
         'extension.manager.supports_v4'
       )
 
+      const supportsCsrfPost = api.getServerFeature(
+        'extension.manager.supports_csrf_post'
+      )
+
       // Check command line args first (highest priority)
       // --enable-manager flag enables the manager (opposite of old --disable-manager)
       const hasEnableManager =
@@ -55,6 +81,19 @@ export function useManagerState() {
         systemStats.value?.system?.argv?.includes('--enable-manager-legacy-ui')
       ) {
         return ManagerUIState.LEGACY_UI
+      }
+
+      // Server exposes v4 but is missing the CSRF-hardened POST endpoints
+      // (Manager < 4.2.1). Treat as INCOMPATIBLE — hide manager UI and
+      // prompt user to upgrade. csrf_post is an independent axis from v4.
+      //
+      // !== true (not === false) is deliberate: feature_flags arrive atomically
+      // via a single WebSocket payload (src/scripts/api.ts:751-758), so undefined
+      // here means the server did not publish the flag (i.e. Manager 4.2.0),
+      // not a transient partial-delivery state. Using === false would let
+      // flag-less Manager 4.2.0 fall through to NEW_UI → POST → 405 regression.
+      if (serverSupportsV4 === true && supportsCsrfPost !== true) {
+        return ManagerUIState.INCOMPATIBLE
       }
 
       // Both client and server support v4 = NEW_UI
@@ -86,11 +125,16 @@ export function useManagerState() {
   )
 
   /**
-   * Check if manager is enabled (not DISABLED)
+   * Check if manager is enabled (not DISABLED and not INCOMPATIBLE)
+   * INCOMPATIBLE is treated as "not installed" from a UX perspective —
+   * the user must upgrade the Manager backend before the UI becomes usable.
    */
   const isManagerEnabled = readonly(
     computed((): boolean => {
-      return managerUIState.value !== ManagerUIState.DISABLED
+      return (
+        managerUIState.value !== ManagerUIState.DISABLED &&
+        managerUIState.value !== ManagerUIState.INCOMPATIBLE
+      )
     })
   )
 
@@ -113,6 +157,16 @@ export function useManagerState() {
   )
 
   /**
+   * Check if the installed Manager backend is too old to use safely
+   * (lacks the CSRF-hardened POST endpoints introduced in Manager 4.2.1).
+   */
+  const isIncompatibleManager = readonly(
+    computed((): boolean => {
+      return managerUIState.value === ManagerUIState.INCOMPATIBLE
+    })
+  )
+
+  /**
    * Check if install button should be shown (only in NEW_UI mode)
    */
   const shouldShowInstallButton = readonly(
@@ -122,12 +176,26 @@ export function useManagerState() {
   )
 
   /**
-   * Check if manager buttons should be shown (when manager is not disabled)
+   * Check if manager buttons should be shown.
+   * Hidden when DISABLED (flag missing) or INCOMPATIBLE (backend too old).
    */
   const shouldShowManagerButtons = readonly(
     computed((): boolean => {
       return isManagerEnabled.value
     })
+  )
+
+  // Fire the upgrade-required toast once when we first observe the
+  // INCOMPATIBLE state. immediate: true handles the common case where the
+  // composable is mounted after feature flags have already arrived.
+  watch(
+    managerUIState,
+    (state) => {
+      if (state === ManagerUIState.INCOMPATIBLE) {
+        showIncompatibleToast()
+      }
+    },
+    { immediate: true }
   )
 
   /**
@@ -141,17 +209,27 @@ export function useManagerState() {
    */
   const openManager = async (options?: {
     initialTab?: ManagerTab
+    initialPackId?: string
     legacyCommand?: string
     showToastOnLegacyError?: boolean
     isLegacyOnly?: boolean
   }): Promise<void> => {
     const state = managerUIState.value
-    const dialogService = useDialogService()
+    const settingsDialog = useSettingsDialog()
     const commandStore = useCommandStore()
 
     switch (state) {
       case ManagerUIState.DISABLED:
-        dialogService.showSettingsDialog('extension')
+        settingsDialog.show('extension')
+        break
+
+      case ManagerUIState.INCOMPATIBLE:
+        // Re-emit the upgrade toast on explicit user action. We intentionally
+        // bypass the once-per-session guard so repeated clicks on a hidden
+        // entry point (e.g. a stale shortcut) still surface guidance,
+        // without redirecting into settings like DISABLED does.
+        incompatibleToastShown = false
+        showIncompatibleToast()
         break
 
       case ManagerUIState.LEGACY_UI: {
@@ -165,13 +243,12 @@ export function useManagerState() {
             useToastStore().add({
               severity: 'error',
               summary: t('g.error'),
-              detail: t('manager.legacyMenuNotAvailable'),
-              life: 3000
+              detail: t('manager.legacyMenuNotAvailable')
             })
           }
           // Fallback to extensions panel if not showing toast
           if (options?.showToastOnLegacyError === false) {
-            dialogService.showSettingsDialog('extension')
+            settingsDialog.show('extension')
           }
         }
         break
@@ -179,18 +256,13 @@ export function useManagerState() {
 
       case ManagerUIState.NEW_UI:
         if (options?.isLegacyOnly) {
-          // Legacy command is not available in NEW_UI mode
           useToastStore().add({
             severity: 'error',
             summary: t('g.error'),
-            detail: t('manager.legacyMenuNotAvailable'),
-            life: 3000
+            detail: t('manager.legacyMenuNotAvailable')
           })
-          dialogService.showManagerDialog({ initialTab: ManagerTab.All })
         } else {
-          dialogService.showManagerDialog(
-            options?.initialTab ? { initialTab: options.initialTab } : undefined
-          )
+          managerDialog.show(options?.initialTab, options?.initialPackId)
         }
         break
     }
@@ -201,8 +273,15 @@ export function useManagerState() {
     isManagerEnabled,
     isNewManagerUI,
     isLegacyManagerUI,
+    isIncompatibleManager,
     shouldShowInstallButton,
     shouldShowManagerButtons,
     openManager
   }
+}
+
+// Test-only export: resets the once-per-session toast guard so unit tests
+// can assert toast firing across multiple `useManagerState()` invocations.
+export const __resetIncompatibleToastGuard = (): void => {
+  incompatibleToastShown = false
 }

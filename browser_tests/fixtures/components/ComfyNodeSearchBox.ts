@@ -1,11 +1,13 @@
+import { expect } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
 export class ComfyNodeSearchFilterSelectionPanel {
-  constructor(public readonly page: Page) {}
+  readonly root: Locator
+  readonly header: Locator
 
-  get header() {
-    return this.page
-      .getByRole('dialog')
+  constructor(public readonly page: Page) {
+    this.root = page.getByRole('dialog')
+    this.header = this.root
       .locator('div')
       .filter({ hasText: 'Add node filter condition' })
   }
@@ -30,13 +32,15 @@ export class ComfyNodeSearchFilterSelectionPanel {
   async addFilter(filterValue: string, filterType: string) {
     await this.selectFilterType(filterType)
     await this.selectFilterValue(filterValue)
-    await this.page.locator('.p-button-label:has-text("Add")').click()
+    await this.page.getByRole('button', { name: 'Add', exact: true }).click()
   }
 }
 
 export class ComfyNodeSearchBox {
   public readonly input: Locator
   public readonly dropdown: Locator
+  public readonly filterButton: Locator
+  public readonly filterChips: Locator
   public readonly filterSelectionPanel: ComfyNodeSearchFilterSelectionPanel
 
   constructor(public readonly page: Page) {
@@ -46,24 +50,29 @@ export class ComfyNodeSearchBox {
     this.dropdown = page.locator(
       '.comfy-vue-node-search-container .p-autocomplete-list'
     )
+    this.filterButton = page.locator(
+      '.comfy-vue-node-search-container .filter-button'
+    )
+    this.filterChips = page.locator(
+      '.comfy-vue-node-search-container .p-autocomplete-chip-item'
+    )
     this.filterSelectionPanel = new ComfyNodeSearchFilterSelectionPanel(page)
-  }
-
-  get filterButton() {
-    return this.page.locator('.comfy-vue-node-search-container .filter-button')
   }
 
   async fillAndSelectFirstNode(
     nodeName: string,
-    options?: { suggestionIndex: number }
+    options?: { suggestionIndex?: number; exact?: boolean }
   ) {
     await this.input.waitFor({ state: 'visible' })
     await this.input.fill(nodeName)
     await this.dropdown.waitFor({ state: 'visible' })
-    await this.dropdown
-      .locator('li')
-      .nth(options?.suggestionIndex || 0)
-      .click()
+
+    const nodeOption = options?.exact
+      ? this.dropdown.locator(`li[aria-label="${nodeName}"]`).first()
+      : this.dropdown.locator('li').nth(options?.suggestionIndex ?? 0)
+
+    await expect(nodeOption).toBeVisible()
+    await nodeOption.click()
   }
 
   async addFilter(filterValue: string, filterType: string) {
@@ -71,13 +80,14 @@ export class ComfyNodeSearchBox {
     await this.filterSelectionPanel.addFilter(filterValue, filterType)
   }
 
-  get filterChips() {
-    return this.page.locator(
-      '.comfy-vue-node-search-container .p-autocomplete-chip-item'
-    )
-  }
-
   async removeFilter(index: number) {
     await this.filterChips.nth(index).locator('.p-chip-remove-icon').click()
+  }
+
+  /**
+   * Returns a locator for a search result containing the specified text.
+   */
+  findResult(text: string): Locator {
+    return this.dropdown.locator('li').filter({ hasText: text })
   }
 }

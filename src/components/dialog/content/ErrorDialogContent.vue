@@ -1,5 +1,8 @@
 <template>
-  <div class="comfy-error-report flex flex-col gap-4">
+  <div
+    data-testid="error-dialog"
+    class="comfy-error-report flex flex-col gap-4"
+  >
     <NoResultsPlaceholder
       class="pb-0"
       icon="pi pi-exclamation-circle"
@@ -16,21 +19,27 @@
     <div class="flex justify-center gap-2">
       <Button
         v-show="!reportOpen"
-        text
-        :label="$t('g.showReport')"
+        data-testid="error-dialog-show-report"
+        variant="textonly"
         @click="showReport"
-      />
+      >
+        {{ $t('g.showReport') }}
+      </Button>
       <Button
         v-show="!reportOpen"
-        text
-        :label="$t('issueReport.helpFix')"
+        data-testid="error-dialog-contact-support"
+        variant="textonly"
         @click="showContactSupport"
-      />
+      >
+        {{ $t('issueReport.helpFix') }}
+      </Button>
     </div>
     <template v-if="reportOpen">
       <Divider />
       <ScrollPanel class="h-[400px] w-full max-w-[80vw]">
-        <pre class="break-words whitespace-pre-wrap">{{ reportContent }}</pre>
+        <pre class="wrap-break-word whitespace-pre-wrap">{{
+          reportContent
+        }}</pre>
       </ScrollPanel>
       <Divider />
     </template>
@@ -42,16 +51,17 @@
       />
       <Button
         v-if="reportOpen"
-        :label="$t('g.copyToClipboard')"
-        icon="pi pi-copy"
+        data-testid="error-dialog-copy-report"
         @click="copyReportToClipboard"
-      />
+      >
+        <i class="pi pi-copy" />
+        {{ $t('g.copyToClipboard') }}
+      </Button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import Button from 'primevue/button'
 import Divider from 'primevue/divider'
 import ScrollPanel from 'primevue/scrollpanel'
 import { useToast } from 'primevue/usetoast'
@@ -60,6 +70,7 @@ import { useI18n } from 'vue-i18n'
 
 import NoResultsPlaceholder from '@/components/common/NoResultsPlaceholder.vue'
 import FindIssueButton from '@/components/dialog/content/error/FindIssueButton.vue'
+import Button from '@/components/ui/button/Button.vue'
 import { useCopyToClipboard } from '@/composables/useCopyToClipboard'
 import { useTelemetry } from '@/platform/telemetry'
 import { api } from '@/scripts/api'
@@ -140,8 +151,7 @@ onMounted(async () => {
     toast.add({
       severity: 'error',
       summary: t('g.error'),
-      detail: t('toastMessages.failedToFetchLogs'),
-      life: 5000
+      detail: t('toastMessages.failedToFetchLogs')
     })
   }
 })

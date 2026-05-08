@@ -1,17 +1,13 @@
 import { expect } from '@playwright/test'
 
-import { comfyPageFixture as test } from '../fixtures/ComfyPage'
+import { comfyPageFixture as test } from '@e2e/fixtures/ComfyPage'
 
-test.describe('Menu', () => {
-  test.beforeEach(async ({ comfyPage }) => {
-    await comfyPage.setSetting('Comfy.UseNewMenu', 'Top')
-  })
-
+test.describe('Menu', { tag: '@ui' }, () => {
   test('Can register sidebar tab', async ({ comfyPage }) => {
     const initialChildrenCount = await comfyPage.menu.buttons.count()
 
     await comfyPage.page.evaluate(async () => {
-      window['app'].extensionManager.registerSidebarTab({
+      window.app!.extensionManager.registerSidebarTab({
         id: 'search',
         icon: 'pi pi-search',
         title: 'search',
@@ -22,36 +18,34 @@ test.describe('Menu', () => {
         }
       })
     })
-    await comfyPage.nextFrame()
-
-    const newChildrenCount = await comfyPage.menu.buttons.count()
-    expect(newChildrenCount).toBe(initialChildrenCount + 1)
+    await expect(comfyPage.menu.buttons).toHaveCount(initialChildrenCount + 1)
   })
 
   test.describe('Workflows topbar tabs', () => {
     test.beforeEach(async ({ comfyPage }) => {
-      await comfyPage.setSetting(
+      await comfyPage.settings.setSetting(
         'Comfy.Workflow.WorkflowTabsPosition',
         'Topbar'
       )
-      await comfyPage.setupWorkflowsDirectory({})
+      await comfyPage.workflow.setupWorkflowsDirectory({})
     })
 
     test('Can show opened workflows', async ({ comfyPage }) => {
-      expect(await comfyPage.menu.topbar.getTabNames()).toEqual([
-        'Unsaved Workflow'
-      ])
+      await expect
+        .poll(() => comfyPage.menu.topbar.getTabNames())
+        .toEqual(['Unsaved Workflow'])
     })
 
     test('Can close saved-workflow tabs', async ({ comfyPage }) => {
       const workflowName = `tempWorkflow-${test.info().title}`
       await comfyPage.menu.topbar.saveWorkflow(workflowName)
-      expect(await comfyPage.menu.topbar.getTabNames()).toEqual([workflowName])
+      await expect
+        .poll(() => comfyPage.menu.topbar.getTabNames())
+        .toEqual([workflowName])
       await comfyPage.menu.topbar.closeWorkflowTab(workflowName)
-      await comfyPage.nextFrame()
-      expect(await comfyPage.menu.topbar.getTabNames()).toEqual([
-        'Unsaved Workflow'
-      ])
+      await expect
+        .poll(() => comfyPage.menu.topbar.getTabNames())
+        .toEqual(['Unsaved Workflow'])
     })
   })
 
@@ -63,10 +57,11 @@ test.describe('Menu', () => {
       const topLevelMenuItem = comfyPage.page
         .locator('a.p-menubar-item-link')
         .first()
-      const isTextCutoff = await topLevelMenuItem.evaluate((el) => {
-        return el.scrollWidth > el.clientWidth
-      })
-      expect(isTextCutoff).toBe(false)
+      await expect
+        .poll(() =>
+          topLevelMenuItem.evaluate((el) => el.scrollWidth > el.clientWidth)
+        )
+        .toBe(false)
     })
 
     test('Clicking on active state items does not close menu', async ({
@@ -101,13 +96,12 @@ test.describe('Menu', () => {
       const checkmark = bottomPanelMenuItem.locator('.pi-check')
 
       // Check initial state of bottom panel (it's initially hidden)
-      const bottomPanel = comfyPage.page.locator('.bottom-panel')
-      await expect(bottomPanel).not.toBeVisible()
+      const { bottomPanel } = comfyPage
+      await expect(bottomPanel.root).toBeHidden()
 
       // Checkmark should be invisible initially (panel is hidden)
       await expect(checkmark).toHaveClass(/invisible/)
 
-      // Click Bottom Panel to toggle it on
       await bottomPanelItem.click()
 
       // Verify menu is still visible after clicking
@@ -115,7 +109,7 @@ test.describe('Menu', () => {
       await expect(viewSubmenu).toBeVisible()
 
       // Verify bottom panel is now visible
-      await expect(bottomPanel).toBeVisible()
+      await expect(bottomPanel.root).toBeVisible()
 
       // Checkmark should now be visible (panel is shown)
       await expect(checkmark).not.toHaveClass(/invisible/)
@@ -128,16 +122,19 @@ test.describe('Menu', () => {
       await expect(viewSubmenu).toBeVisible()
 
       // Verify bottom panel is hidden again
-      await expect(bottomPanel).not.toBeVisible()
+      await expect(bottomPanel.root).toBeHidden()
 
       // Checkmark should be invisible again (panel is hidden)
       await expect(checkmark).toHaveClass(/invisible/)
 
-      // Click outside to close menu
-      await comfyPage.page.locator('body').click({ position: { x: 10, y: 10 } })
+      // Click in top-right corner to close menu (avoid hamburger menu at top-left)
+      const viewport = comfyPage.page.viewportSize()!
+      await comfyPage.page
+        .locator('body')
+        .click({ position: { x: viewport.width - 10, y: 10 } })
 
       // Verify menu is now closed
-      await expect(menu).not.toBeVisible()
+      await expect(menu).toBeHidden()
     })
 
     test('Displays keybinding next to item', async ({ comfyPage }) => {
@@ -147,12 +144,12 @@ test.describe('Menu', () => {
       const exportTag = comfyPage.page.locator('.keybinding-tag', {
         hasText: 'Ctrl + s'
       })
-      expect(await exportTag.count()).toBe(1)
+      await expect(exportTag).toHaveCount(1)
     })
 
     test('Can catch error when executing command', async ({ comfyPage }) => {
       await comfyPage.page.evaluate(() => {
-        window['app'].registerExtension({
+        window.app!.registerExtension({
           name: 'TestExtension1',
           commands: [
             {
@@ -172,7 +169,7 @@ test.describe('Menu', () => {
         })
       })
       await comfyPage.menu.topbar.triggerTopbarCommand(['ext', 'foo-command'])
-      expect(await comfyPage.getVisibleToastCount()).toBe(1)
+      await expect(comfyPage.toast.visibleToasts).toHaveCount(1)
     })
 
     test('Can navigate Theme menu and switch between Dark and Light themes', async ({
@@ -201,17 +198,21 @@ test.describe('Menu', () => {
       await topbar.switchTheme('light')
 
       // Verify menu stays open and Light theme shows as active
-      await expect(menu).toBeVisible()
-      await expect(themeSubmenu).toBeVisible()
-
-      // Check that Light theme is active
-      expect(await topbar.isMenuItemActive(lightThemeItem)).toBe(true)
+      await expect(async () => {
+        await expect(menu).toBeVisible()
+        await expect(themeSubmenu).toBeVisible()
+        await expect(lightThemeItem.locator('.pi-check')).not.toHaveClass(
+          /invisible/
+        )
+      }).toPass({ timeout: 5000 })
 
       // Screenshot with light theme active
       await comfyPage.attachScreenshot('theme-menu-light-active')
 
       // Verify ColorPalette setting is set to "light"
-      expect(await comfyPage.getSetting('Comfy.ColorPalette')).toBe('light')
+      await expect
+        .poll(() => comfyPage.settings.getSetting('Comfy.ColorPalette'))
+        .toBe('light')
 
       // Close menu to see theme change
       await topbar.closeTopbarMenu()
@@ -224,18 +225,24 @@ test.describe('Menu', () => {
       await topbar.switchTheme('dark')
 
       // Verify menu stays open and Dark theme shows as active
-      await expect(menu).toBeVisible()
-      await expect(themeItems2.submenu).toBeVisible()
-
-      // Check that Dark theme is active and Light theme is not
-      expect(await topbar.isMenuItemActive(themeItems2.darkTheme)).toBe(true)
-      expect(await topbar.isMenuItemActive(themeItems2.lightTheme)).toBe(false)
+      await expect(async () => {
+        await expect(menu).toBeVisible()
+        await expect(themeItems2.submenu).toBeVisible()
+        await expect(
+          themeItems2.darkTheme.locator('.pi-check')
+        ).not.toHaveClass(/invisible/)
+        await expect(themeItems2.lightTheme.locator('.pi-check')).toHaveClass(
+          /invisible/
+        )
+      }).toPass({ timeout: 5000 })
 
       // Screenshot with dark theme active
       await comfyPage.attachScreenshot('theme-menu-dark-active')
 
       // Verify ColorPalette setting is set to "dark"
-      expect(await comfyPage.getSetting('Comfy.ColorPalette')).toBe('dark')
+      await expect
+        .poll(() => comfyPage.settings.getSetting('Comfy.ColorPalette'))
+        .toBe('dark')
 
       // Close menu
       await topbar.closeTopbarMenu()
@@ -248,16 +255,20 @@ test.describe('Menu', () => {
     test(`Can migrate deprecated menu positions (${position})`, async ({
       comfyPage
     }) => {
-      await comfyPage.setSetting('Comfy.UseNewMenu', position)
-      expect(await comfyPage.getSetting('Comfy.UseNewMenu')).toBe('Top')
+      await comfyPage.settings.setSetting('Comfy.UseNewMenu', position)
+      await expect
+        .poll(() => comfyPage.settings.getSetting('Comfy.UseNewMenu'))
+        .toBe('Top')
     })
 
     test(`Can migrate deprecated menu positions on initial load (${position})`, async ({
       comfyPage
     }) => {
-      await comfyPage.setSetting('Comfy.UseNewMenu', position)
+      await comfyPage.settings.setSetting('Comfy.UseNewMenu', position)
       await comfyPage.setup()
-      expect(await comfyPage.getSetting('Comfy.UseNewMenu')).toBe('Top')
+      await expect
+        .poll(() => comfyPage.settings.getSetting('Comfy.UseNewMenu'))
+        .toBe('Top')
     })
   })
 })

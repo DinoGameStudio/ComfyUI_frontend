@@ -1,5 +1,5 @@
 <template>
-  <TabPanel value="Credits" class="credits-container h-full">
+  <div class="credits-container h-full">
     <!-- Legacy Design -->
     <div class="flex h-full flex-col">
       <h2 class="mb-2 text-2xl font-bold">
@@ -17,10 +17,11 @@
           <Skeleton v-if="loading" width="2rem" height="2rem" />
           <Button
             v-else-if="isActiveSubscription"
-            :label="$t('credits.purchaseCredits')"
             :loading="loading"
             @click="handlePurchaseCreditsClick"
-          />
+          >
+            {{ $t('credits.purchaseCredits') }}
+          </Button>
         </div>
         <div class="flex flex-row items-center">
           <Skeleton
@@ -33,25 +34,26 @@
             {{ $t('credits.lastUpdated') }}: {{ formattedLastUpdateTime }}
           </div>
           <Button
-            icon="pi pi-refresh"
-            text
-            size="small"
-            severity="secondary"
+            variant="muted-textonly"
+            size="icon-sm"
+            :aria-label="$t('g.refresh')"
             @click="() => authActions.fetchBalance()"
-          />
+          >
+            <i class="pi pi-refresh" />
+          </Button>
         </div>
       </div>
 
       <div class="flex items-center justify-between">
         <h3>{{ $t('credits.activity') }}</h3>
         <Button
-          :label="$t('credits.invoiceHistory')"
-          text
-          severity="secondary"
-          icon="pi pi-arrow-up-right"
+          variant="muted-textonly"
           :loading="loading"
           @click="handleCreditsHistoryClick"
-        />
+        >
+          <i class="pi pi-arrow-up-right" />
+          {{ $t('credits.invoiceHistory') }}
+        </Button>
       </div>
 
       <template v-if="creditHistory.length > 0">
@@ -86,50 +88,40 @@
       <UsageLogsTable ref="usageLogsTableRef" />
 
       <div class="flex flex-row gap-2">
-        <Button
-          :label="$t('credits.faqs')"
-          text
-          severity="secondary"
-          icon="pi pi-question-circle"
-          @click="handleFaqClick"
-        />
-        <Button
-          :label="$t('subscription.partnerNodesCredits')"
-          text
-          severity="secondary"
-          icon="pi pi-question-circle"
-          @click="handleOpenPartnerNodesInfo"
-        />
-        <Button
-          :label="$t('credits.messageSupport')"
-          text
-          severity="secondary"
-          icon="pi pi-comments"
-          @click="handleMessageSupport"
-        />
+        <Button variant="muted-textonly" @click="handleFaqClick">
+          <i class="pi pi-question-circle" />
+          {{ $t('credits.faqs') }}
+        </Button>
+        <Button variant="muted-textonly" @click="handleOpenPartnerNodesInfo">
+          <i class="pi pi-question-circle" />
+          {{ $t('subscription.partnerNodesCredits') }}
+        </Button>
+        <Button variant="muted-textonly" @click="handleMessageSupport">
+          <i class="pi pi-comments" />
+          {{ $t('credits.messageSupport') }}
+        </Button>
       </div>
     </div>
-  </TabPanel>
+  </div>
 </template>
 
 <script setup lang="ts">
-import Button from 'primevue/button'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import Divider from 'primevue/divider'
 import Skeleton from 'primevue/skeleton'
-import TabPanel from 'primevue/tabpanel'
 import { computed, ref, watch } from 'vue'
 
 import UserCredit from '@/components/common/UserCredit.vue'
 import UsageLogsTable from '@/components/dialog/content/setting/UsageLogsTable.vue'
-import { useFirebaseAuthActions } from '@/composables/auth/useFirebaseAuthActions'
+import Button from '@/components/ui/button/Button.vue'
+import { useBillingContext } from '@/composables/billing/useBillingContext'
+import { useAuthActions } from '@/composables/auth/useAuthActions'
 import { useExternalLink } from '@/composables/useExternalLink'
-import { useSubscription } from '@/platform/cloud/subscription/composables/useSubscription'
 import { useTelemetry } from '@/platform/telemetry'
 import { useDialogService } from '@/services/dialogService'
 import { useCommandStore } from '@/stores/commandStore'
-import { useFirebaseAuthStore } from '@/stores/firebaseAuthStore'
+import { useAuthStore } from '@/stores/authStore'
 import { formatMetronomeCurrency } from '@/utils/formatUtil'
 
 interface CreditHistoryItemData {
@@ -141,11 +133,11 @@ interface CreditHistoryItemData {
 
 const { buildDocsUrl, docsPaths } = useExternalLink()
 const dialogService = useDialogService()
-const authStore = useFirebaseAuthStore()
-const authActions = useFirebaseAuthActions()
+const authStore = useAuthStore()
+const authActions = useAuthActions()
 const commandStore = useCommandStore()
 const telemetry = useTelemetry()
-const { isActiveSubscription } = useSubscription()
+const { isActiveSubscription } = useBillingContext()
 const loading = computed(() => authStore.loading)
 const balanceLoading = computed(() => authStore.isFetchingBalance)
 

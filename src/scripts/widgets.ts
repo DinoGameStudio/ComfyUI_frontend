@@ -8,6 +8,8 @@ import type {
 import { useSettingStore } from '@/platform/settings/settingStore'
 import { dynamicWidgets } from '@/core/graph/widgets/dynamicWidgets'
 import { useBooleanWidget } from '@/renderer/extensions/vueNodes/widgets/composables/useBooleanWidget'
+import { useBoundingBoxWidget } from '@/renderer/extensions/vueNodes/widgets/composables/useBoundingBoxWidget'
+import { useCurveWidget } from '@/renderer/extensions/vueNodes/widgets/composables/useCurveWidget'
 import { useChartWidget } from '@/renderer/extensions/vueNodes/widgets/composables/useChartWidget'
 import { useColorWidget } from '@/renderer/extensions/vueNodes/widgets/composables/useColorWidget'
 import { useComboWidget } from '@/renderer/extensions/vueNodes/widgets/composables/useComboWidget'
@@ -17,6 +19,8 @@ import { useImageCompareWidget } from '@/renderer/extensions/vueNodes/widgets/co
 import { useImageUploadWidget } from '@/renderer/extensions/vueNodes/widgets/composables/useImageUploadWidget'
 import { useIntWidget } from '@/renderer/extensions/vueNodes/widgets/composables/useIntWidget'
 import { useMarkdownWidget } from '@/renderer/extensions/vueNodes/widgets/composables/useMarkdownWidget'
+import { usePainterWidget } from '@/renderer/extensions/vueNodes/widgets/composables/usePainterWidget'
+import { useRangeWidget } from '@/renderer/extensions/vueNodes/widgets/composables/useRangeWidget'
 import { useStringWidget } from '@/renderer/extensions/vueNodes/widgets/composables/useStringWidget'
 import { useTextareaWidget } from '@/renderer/extensions/vueNodes/widgets/composables/useTextareaWidget'
 import { transformInputSpecV1ToV2 } from '@/schemas/nodeDef/migration'
@@ -139,6 +143,9 @@ export function addValueControlWidgets(
     'Allows the linked widget to be changed automatically, for example randomizing the noise seed.'
   valueControl[IS_CONTROL_WIDGET] = true
   updateControlWidgetLabel(valueControl)
+  Object.defineProperty(valueControl, 'disabled', {
+    get: () => targetWidget.computedDisabled
+  })
   const widgets: [IComboWidget, ...IStringWidget[]] = [valueControl]
 
   const isCombo = isComboWidget(targetWidget)
@@ -160,6 +167,9 @@ export function addValueControlWidgets(
     updateControlWidgetLabel(comboFilter)
     comboFilter.tooltip =
       "Allows for filtering the list of values when changing the value via the control generate mode. Allows for RegEx matches in the format /abc/ to only filter to values containing 'abc'."
+    Object.defineProperty(comboFilter, 'disabled', {
+      get: () => targetWidget.computedDisabled
+    })
 
     widgets.push(comboFilter)
   }
@@ -266,8 +276,8 @@ export function addValueControlWidgets(
     }
   }
 
-  valueControl.beforeQueued = () => {
-    if (controlValueRunBefore()) {
+  valueControl.beforeQueued = ({ isPartialExecution } = {}) => {
+    if (!isPartialExecution && controlValueRunBefore()) {
       // Don't run on first execution
       if (valueControl[HAS_EXECUTED]) {
         applyWidgetControl()
@@ -276,8 +286,8 @@ export function addValueControlWidgets(
     valueControl[HAS_EXECUTED] = true
   }
 
-  valueControl.afterQueued = () => {
-    if (!controlValueRunBefore()) {
+  valueControl.afterQueued = ({ isPartialExecution } = {}) => {
+    if (!isPartialExecution && !controlValueRunBefore()) {
       applyWidgetControl()
     }
   }
@@ -295,9 +305,13 @@ export const ComfyWidgets = {
   IMAGEUPLOAD: useImageUploadWidget(),
   COLOR: transformWidgetConstructorV2ToV1(useColorWidget()),
   IMAGECOMPARE: transformWidgetConstructorV2ToV1(useImageCompareWidget()),
+  BOUNDING_BOX: transformWidgetConstructorV2ToV1(useBoundingBoxWidget()),
   CHART: transformWidgetConstructorV2ToV1(useChartWidget()),
   GALLERIA: transformWidgetConstructorV2ToV1(useGalleriaWidget()),
+  PAINTER: transformWidgetConstructorV2ToV1(usePainterWidget()),
   TEXTAREA: transformWidgetConstructorV2ToV1(useTextareaWidget()),
+  CURVE: transformWidgetConstructorV2ToV1(useCurveWidget()),
+  RANGE: transformWidgetConstructorV2ToV1(useRangeWidget()),
   ...dynamicWidgets
 } as const
 

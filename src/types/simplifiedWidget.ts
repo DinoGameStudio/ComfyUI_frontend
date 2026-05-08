@@ -3,6 +3,7 @@
  * Removes all DOM manipulation and positioning concerns
  */
 import type { InputSpec as InputSpecV2 } from '@/schemas/nodeDef/nodeDefSchemaV2'
+import type { IWidgetOptions } from '@/lib/litegraph/src/types/widgets'
 
 /** Valid types for widget values */
 export type WidgetValue =
@@ -15,7 +16,7 @@ export type WidgetValue =
   | void
   | File[]
 
-const CONTROL_OPTIONS = [
+export const CONTROL_OPTIONS = [
   'fixed',
   'increment',
   'decrement',
@@ -37,9 +38,14 @@ export type SafeControlWidget = {
   update: (value: WidgetValue) => void
 }
 
+export interface LinkedUpstreamInfo {
+  nodeId: string
+  outputName?: string
+}
+
 export interface SimplifiedWidget<
   T extends WidgetValue = WidgetValue,
-  O = Record<string, any>
+  O extends IWidgetOptions = IWidgetOptions
 > {
   /** Display name of the widget */
   name: string
@@ -68,17 +74,24 @@ export interface SimplifiedWidget<
   nodeType?: string
 
   /** Optional serialization method for custom value handling */
-  serializeValue?: () => any
+  serializeValue?: () => unknown
+
+  /** NodeLocatorId for the node that owns this widget's execution outputs */
+  nodeLocatorId?: string
 
   /** Optional input specification backing this widget */
   spec?: InputSpecV2
 
+  tooltip?: string
+
   controlWidget?: SafeControlWidget
+
+  linkedUpstream?: LinkedUpstreamInfo
 }
 
 export interface SimplifiedControlWidget<
   T extends WidgetValue = WidgetValue,
-  O = Record<string, any>
+  O extends IWidgetOptions = IWidgetOptions
 > extends SimplifiedWidget<T, O> {
   controlWidget: SafeControlWidget
 }

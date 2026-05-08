@@ -1,9 +1,10 @@
-import type { LGraph } from '@/lib/litegraph/src/LGraph'
+import type { LGraph, SubgraphId } from '@/lib/litegraph/src/LGraph'
 import { LGraphGroup } from '@/lib/litegraph/src/LGraphGroup'
 import { LGraphNode } from '@/lib/litegraph/src/LGraphNode'
 import { LLink } from '@/lib/litegraph/src/LLink'
 import type { ResolvedConnection } from '@/lib/litegraph/src/LLink'
 import { Reroute } from '@/lib/litegraph/src/Reroute'
+import type { RerouteId } from '@/lib/litegraph/src/Reroute'
 import {
   SUBGRAPH_INPUT_ID,
   SUBGRAPH_OUTPUT_ID
@@ -20,7 +21,6 @@ import type {
   SerialisableLLink,
   SubgraphIO
 } from '@/lib/litegraph/src/types/serialisation'
-import type { UUID } from '@/lib/litegraph/src/utils/uuid'
 
 import type { GraphOrSubgraph } from './Subgraph'
 import type { SubgraphInput } from './SubgraphInput'
@@ -259,10 +259,29 @@ export function groupResolvedByOutput(
 
   return groupedByOutput
 }
+function mapReroutes(
+  link: SerialisableLLink,
+  reroutes: Map<RerouteId, Reroute>
+) {
+  let child: SerialisableLLink | Reroute = link
+  let nextReroute =
+    child.parentId === undefined ? undefined : reroutes.get(child.parentId)
+
+  while (child.parentId !== undefined && nextReroute) {
+    child = nextReroute
+    nextReroute =
+      child.parentId === undefined ? undefined : reroutes.get(child.parentId)
+  }
+
+  const lastId = child.parentId
+  child.parentId = undefined
+  return lastId
+}
 
 export function mapSubgraphInputsAndLinks(
   resolvedInputLinks: ResolvedConnection[],
-  links: SerialisableLLink[]
+  links: SerialisableLLink[],
+  reroutes: Map<RerouteId, Reroute>
 ): SubgraphIO[] {
   // Group matching links
   const groupedByOutput = groupResolvedByOutput(resolvedInputLinks)
@@ -279,8 +298,10 @@ export function mapSubgraphInputsAndLinks(
       if (!input) continue
 
       const linkData = link.asSerialisable()
+      link.parentId = mapReroutes(link, reroutes)
       linkData.origin_id = SUBGRAPH_INPUT_ID
       linkData.origin_slot = inputs.length
+
       links.push(linkData)
       inputLinks.push(linkData)
     }
@@ -340,7 +361,8 @@ export function mapSubgraphInputsAndLinks(
  */
 export function mapSubgraphOutputsAndLinks(
   resolvedOutputLinks: ResolvedConnection[],
-  links: SerialisableLLink[]
+  links: SerialisableLLink[],
+  reroutes: Map<RerouteId, Reroute>
 ): SubgraphIO[] {
   // Group matching links
   const groupedByOutput = groupResolvedByOutput(resolvedOutputLinks)
@@ -355,10 +377,11 @@ export function mapSubgraphOutputsAndLinks(
       const { link, output } = resolved
       if (!output) continue
 
-      // Link
       const linkData = link.asSerialisable()
+      linkData.parentId = mapReroutes(link, reroutes)
       linkData.target_id = SUBGRAPH_OUTPUT_ID
       linkData.target_slot = outputs.length
+
       links.push(linkData)
       outputLinks.push(linkData)
     }
@@ -414,8 +437,8 @@ export function mapSubgraphOutputsAndLinks(
  * @param graph The graph to check for subgraph nodes
  * @returns Set of subgraph IDs used in this graph
  */
-export function getDirectSubgraphIds(graph: GraphOrSubgraph): Set<UUID> {
-  const subgraphIds = new Set<UUID>()
+export function getDirectSubgraphIds(graph: GraphOrSubgraph): Set<SubgraphId> {
+  const subgraphIds = new Set<SubgraphId>()
 
   for (const node of graph._nodes) {
     if (node.isSubgraphNode()) {
@@ -434,9 +457,9 @@ export function getDirectSubgraphIds(graph: GraphOrSubgraph): Set<UUID> {
  */
 export function findUsedSubgraphIds(
   rootGraph: GraphOrSubgraph,
-  subgraphRegistry: Map<UUID, GraphOrSubgraph>
-): Set<UUID> {
-  const usedSubgraphIds = new Set<UUID>()
+  subgraphRegistry: Map<SubgraphId, GraphOrSubgraph>
+): Set<SubgraphId> {
+  const usedSubgraphIds = new Set<SubgraphId>()
   const toVisit: GraphOrSubgraph[] = [rootGraph]
 
   while (toVisit.length > 0) {

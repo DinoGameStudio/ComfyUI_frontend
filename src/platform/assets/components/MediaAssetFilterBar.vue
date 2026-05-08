@@ -1,53 +1,57 @@
 <template>
-  <div class="flex gap-3">
-    <SearchBox
+  <SidebarTopArea :bottom-divider>
+    <SearchInput
       :model-value="searchQuery"
-      :placeholder="$t('sideToolbar.searchAssets') + '...'"
+      :placeholder="
+        $t('g.searchPlaceholder', { subject: $t('sideToolbar.labels.assets') })
+      "
       @update:model-value="handleSearchChange"
     />
-    <MediaAssetFilterButton
-      v-if="isCloud"
-      v-tooltip.top="{ value: $t('assetBrowser.filterBy') }"
-      size="md"
-    >
-      <template #default="{ close }">
-        <MediaAssetFilterMenu
-          :media-type-filters="mediaTypeFilters"
-          :close="close"
-          @update:media-type-filters="handleMediaTypeFiltersChange"
-        />
-      </template>
-    </MediaAssetFilterButton>
-    <AssetSortButton
-      v-if="isCloud"
-      v-tooltip.top="{ value: $t('assetBrowser.sortBy') }"
-      size="md"
-    >
-      <template #default="{ close }">
-        <MediaAssetSortMenu
-          v-model:sort-by="sortBy"
-          :show-generation-time-sort
-          :close="close"
-        />
-      </template>
-    </AssetSortButton>
-  </div>
+    <template #actions>
+      <MediaAssetFilterButton
+        v-if="isCloud"
+        v-tooltip.top="{ value: $t('assetBrowser.filterBy') }"
+      >
+        <template #default="{ close }">
+          <MediaAssetFilterMenu
+            :media-type-filters
+            :close
+            @update:media-type-filters="handleMediaTypeFiltersChange"
+          />
+        </template>
+      </MediaAssetFilterButton>
+      <MediaAssetSettingsButton
+        v-tooltip.top="{ value: $t('sideToolbar.mediaAssets.viewSettings') }"
+      >
+        <template #default>
+          <MediaAssetSettingsMenu
+            v-model:view-mode="viewMode"
+            v-model:sort-by="sortBy"
+            :show-sort-options="isCloud"
+            :show-generation-time-sort
+          />
+        </template>
+      </MediaAssetSettingsButton>
+    </template>
+  </SidebarTopArea>
 </template>
 
 <script setup lang="ts">
-import SearchBox from '@/components/common/SearchBox.vue'
+import SidebarTopArea from '@/components/sidebar/tabs/SidebarTopArea.vue'
+import SearchInput from '@/components/ui/search-input/SearchInput.vue'
 import { isCloud } from '@/platform/distribution/types'
 
 import MediaAssetFilterButton from './MediaAssetFilterButton.vue'
 import MediaAssetFilterMenu from './MediaAssetFilterMenu.vue'
-import AssetSortButton from './MediaAssetSortButton.vue'
-import MediaAssetSortMenu from './MediaAssetSortMenu.vue'
-import type { SortBy } from './MediaAssetSortMenu.vue'
+import MediaAssetSettingsButton from './MediaAssetSettingsButton.vue'
+import MediaAssetSettingsMenu from './MediaAssetSettingsMenu.vue'
+import type { SortBy } from './MediaAssetSettingsMenu.vue'
 
-const { showGenerationTimeSort = false } = defineProps<{
+const { showGenerationTimeSort = false, bottomDivider = false } = defineProps<{
   searchQuery: string
   showGenerationTimeSort?: boolean
   mediaTypeFilters: string[]
+  bottomDivider?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -56,6 +60,7 @@ const emit = defineEmits<{
 }>()
 
 const sortBy = defineModel<SortBy>('sortBy', { required: true })
+const viewMode = defineModel<'list' | 'grid'>('viewMode', { required: true })
 
 const handleSearchChange = (value: string | undefined) => {
   emit('update:searchQuery', value ?? '')

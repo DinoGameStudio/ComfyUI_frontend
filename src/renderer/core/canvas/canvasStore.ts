@@ -3,13 +3,19 @@ import { defineStore } from 'pinia'
 import { computed, markRaw, ref, shallowRef } from 'vue'
 import type { Raw } from 'vue'
 
+import { useAppMode } from '@/composables/useAppMode'
+
 import type { Point, Positionable } from '@/lib/litegraph/src/interfaces'
+import type { NodeId } from '@/lib/litegraph/src/LGraphNode'
 import type {
   LGraph,
   LGraphCanvas,
   LGraphGroup,
-  LGraphNode
+  LGraphNode,
+  SubgraphNode
 } from '@/lib/litegraph/src/litegraph'
+import { promoteRecommendedWidgets } from '@/core/graph/subgraph/promotionUtils'
+import { useLayoutMutations } from '@/renderer/core/layout/operations/layoutMutations'
 import { app } from '@/scripts/app'
 import { isLGraphGroup, isLGraphNode, isReroute } from '@/utils/litegraphUtil'
 
@@ -39,8 +45,17 @@ export const useCanvasStore = defineStore('canvas', () => {
 
   // Reactive scale percentage that syncs with app.canvas.ds.scale
   const appScalePercentage = ref(100)
+  const updateAppScalePercentage = (scale: number) => {
+    appScalePercentage.value = Math.round(scale * 100)
+  }
 
-  const linearMode = ref(false)
+  const { isAppMode, setMode } = useAppMode()
+  const linearMode = computed({
+    get: () => isAppMode.value,
+    set: (val: boolean) => {
+      setMode(val ? 'app' : 'graph')
+    }
+  })
 
   // Set up scale synchronization when canvas is available
   let originalOnChanged: ((scale: number, offset: Point) => void) | undefined =
@@ -49,12 +64,12 @@ export const useCanvasStore = defineStore('canvas', () => {
     if (app.canvas?.ds) {
       // Initial sync
       originalOnChanged = app.canvas.ds.onChanged
-      appScalePercentage.value = Math.round(app.canvas.ds.scale * 100)
+      updateAppScalePercentage(app.canvas.ds.scale)
 
       // Set up continuous sync
       app.canvas.ds.onChanged = () => {
         if (app.canvas?.ds?.scale) {
-          appScalePercentage.value = Math.round(app.canvas.ds.scale * 100)
+          updateAppScalePercentage(app.canvas.ds.scale)
         }
         // Call original handler if exists
         originalOnChanged?.(app.canvas.ds.scale, app.canvas.ds.offset)
@@ -96,11 +111,12 @@ export const useCanvasStore = defineStore('canvas', () => {
     app.canvas.setDirty(true, true)
 
     // Update reactive value immediately for UI consistency
-    appScalePercentage.value = Math.round(newScale * 100)
+    updateAppScalePercentage(newScale)
   }
 
   const currentGraph = shallowRef<LGraph | null>(null)
   const isInSubgraph = ref(false)
+  const isGhostPlacing = ref(false)
 
   // Provide selection state to all Vue nodes
   const selectedNodeIds = computed(
@@ -128,6 +144,25 @@ export const useCanvasStore = defineStore('canvas', () => {
       useEventListener(newCanvas.canvas, 'subgraph-opened', () => {
         isInSubgraph.value = true
       })
+
+      useEventListener(
+        newCanvas.canvas,
+        'subgraph-converted',
+        (e: CustomEvent<{ subgraphNode: SubgraphNode }>) =>
+          promoteRecommendedWidgets(e.detail.subgraphNode)
+      )
+
+      useEventListener(
+        newCanvas.canvas,
+        'litegraph:ghost-placement',
+        (e: CustomEvent<{ active: boolean; nodeId: NodeId }>) => {
+          isGhostPlacing.value = e.detail.active
+          if (e.detail.active) {
+            const mutations = useLayoutMutations()
+            mutations.bringNodeToFront(String(e.detail.nodeId))
+          }
+        }
+      )
     },
     { immediate: true }
   )
@@ -147,6 +182,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     initScaleSync,
     cleanupScaleSync,
     currentGraph,
-    isInSubgraph
+    isInSubgraph,
+    isGhostPlacing
   }
 })

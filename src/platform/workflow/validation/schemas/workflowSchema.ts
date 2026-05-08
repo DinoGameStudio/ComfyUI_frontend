@@ -3,7 +3,11 @@ import type { SafeParseReturnType } from 'zod'
 import { fromZodError } from 'zod-validation-error'
 import type { RendererType } from '@/lib/litegraph/src/LGraph'
 
-const zRendererType = z.enum(['LG', 'Vue']) satisfies z.ZodType<RendererType>
+const zRendererType = z.enum([
+  'LG',
+  'Vue',
+  'Vue-corrected'
+]) satisfies z.ZodType<RendererType>
 
 // GroupNode is hacking node id to be a string, so we need to allow that.
 // innerNode.id = `${this.node.id}:${i}`
@@ -11,6 +15,15 @@ const zRendererType = z.enum(['LG', 'Vue']) satisfies z.ZodType<RendererType>
 export const zNodeId = z.union([z.number().int(), z.string()])
 const zNodeInputName = z.string()
 export type NodeId = z.infer<typeof zNodeId>
+
+/**
+ * UUID identifier for a saved workflow.
+ *
+ * Workflow files persist their identity as `id: z.string().uuid()` on the
+ * graph schema. This alias names that primitive at use sites (services,
+ * stores, share types) without changing structural typing.
+ */
+export type WorkflowId = string
 const zSlotIndex = z.union([
   z.number().int(),
   z
@@ -275,7 +288,27 @@ const zExtra = z
     frontendVersion: z.string().optional(),
     linkExtensions: z.array(zComfyLinkExtension).optional(),
     reroutes: z.array(zReroute).optional(),
-    workflowRendererVersion: zRendererType.optional()
+    workflowRendererVersion: zRendererType.optional(),
+    BlueprintDescription: z.string().optional(),
+    BlueprintSearchAliases: z.array(z.string()).optional(),
+    linearMode: z.boolean().optional(),
+    linearData: z
+      .object({
+        inputs: z
+          .array(
+            z.union([
+              z.tuple([
+                zNodeId,
+                z.string(),
+                z.object({ height: z.number().optional() }).passthrough()
+              ]),
+              z.tuple([zNodeId, z.string()])
+            ])
+          )
+          .optional(),
+        outputs: z.array(zNodeId).optional()
+      })
+      .optional()
   })
   .passthrough()
 
@@ -394,6 +427,14 @@ interface SubgraphDefinitionBase<
   id: string
   revision: number
   name: string
+  /** Optional description shown as tooltip when hovering over the subgraph node. */
+  description?: string
+  category?: string
+  essentials_category?: string
+  /** Custom metadata for the subgraph (description, searchAliases, etc.) */
+  extra?: T extends ComfyWorkflow1BaseInput
+    ? z.input<typeof zExtra> | null
+    : z.output<typeof zExtra> | null
 
   inputNode: T extends ComfyWorkflow1BaseInput
     ? z.input<typeof zExportedSubgraphIONode>
@@ -425,6 +466,10 @@ const zSubgraphDefinition = zComfyWorkflow1
     id: z.string().uuid(),
     revision: z.number(),
     name: z.string(),
+    /** Optional description shown as tooltip when hovering over the subgraph node. */
+    description: z.string().optional(),
+    category: z.string().optional(),
+    essentials_category: z.string().optional(),
     inputNode: zExportedSubgraphIONode,
     outputNode: zExportedSubgraphIONode,
 
@@ -452,7 +497,6 @@ const zSubgraphDefinition = zComfyWorkflow1
   .passthrough()
 
 export type ModelFile = z.infer<typeof zModelFile>
-export type ComfyLink = z.infer<typeof zComfyLink>
 export type ComfyLinkObject = z.infer<typeof zComfyLinkObject>
 export type ComfyNode = z.infer<typeof zComfyNode>
 export type Reroute = z.infer<typeof zReroute>
@@ -460,24 +504,6 @@ export type WorkflowJSON04 = z.infer<typeof zComfyWorkflow>
 export type ComfyWorkflowJSON = z.infer<
   typeof zComfyWorkflow | typeof zComfyWorkflow1
 >
-type SubgraphDefinition = z.infer<typeof zSubgraphDefinition>
-
-/**
- * Type guard to check if an object is a SubgraphDefinition.
- * This helps TypeScript understand the type when z.lazy() breaks inference.
- */
-export function isSubgraphDefinition(obj: unknown): obj is SubgraphDefinition {
-  return (
-    obj !== null &&
-    typeof obj === 'object' &&
-    'id' in obj &&
-    'name' in obj &&
-    'nodes' in obj &&
-    Array.isArray((obj as SubgraphDefinition).nodes) &&
-    'inputNode' in obj &&
-    'outputNode' in obj
-  )
-}
 
 const zWorkflowVersion = z.object({
   version: z.number()

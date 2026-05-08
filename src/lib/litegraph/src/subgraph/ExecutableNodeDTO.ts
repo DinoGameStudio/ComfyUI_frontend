@@ -1,14 +1,11 @@
 import type { LGraph } from '@/lib/litegraph/src/LGraph'
 import type { LGraphNode, NodeId } from '@/lib/litegraph/src/LGraphNode'
+import type { LinkId } from '@/lib/litegraph/src/LLink'
 import { InvalidLinkError } from '@/lib/litegraph/src/infrastructure/InvalidLinkError'
 import { NullGraphError } from '@/lib/litegraph/src/infrastructure/NullGraphError'
 import { RecursionError } from '@/lib/litegraph/src/infrastructure/RecursionError'
 import { SlotIndexError } from '@/lib/litegraph/src/infrastructure/SlotIndexError'
-import type {
-  CallbackParams,
-  CallbackReturn,
-  ISlotType
-} from '@/lib/litegraph/src/interfaces'
+import type { ISlotType } from '@/lib/litegraph/src/interfaces'
 import { LGraphEventMode, LiteGraph } from '@/lib/litegraph/src/litegraph'
 
 import type { Subgraph } from './Subgraph'
@@ -45,16 +42,16 @@ type ResolvedInput = {
  */
 export class ExecutableNodeDTO implements ExecutableLGraphNode {
   applyToGraph?(
-    ...args: CallbackParams<typeof this.node.applyToGraph>
-  ): CallbackReturn<typeof this.node.applyToGraph>
+    ...args: Parameters<NonNullable<typeof this.node.applyToGraph>>
+  ): ReturnType<NonNullable<typeof this.node.applyToGraph>>
 
   /** The graph that this node is a part of. */
   readonly graph: LGraph | Subgraph
 
-  inputs: { linkId: number | null; name: string; type: ISlotType }[]
+  inputs: { linkId: LinkId | null; name: string; type: ISlotType }[]
 
   /** Backing field for {@link id}. */
-  #id: ExecutionId
+  private _id: ExecutionId
 
   /**
    * The path to the actual node through subgraph instances, represented as a list of all subgraph node IDs (instances),
@@ -66,7 +63,7 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
    * - `3` is the node ID of the actual node in the subgraph definition
    */
   get id() {
-    return this.#id
+    return this._id
   }
 
   get type() {
@@ -110,7 +107,7 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
     if (!node.graph) throw new NullGraphError()
 
     // Set the internal ID of the DTO
-    this.#id = [...this.subgraphNodePath, this.node.id].join(':')
+    this._id = [...this.subgraphNodePath, this.node.id].join(':')
     this.graph = node.graph
     this.inputs = this.node.inputs.map((x) => ({
       linkId: x.link,
@@ -198,13 +195,18 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
         }
       }
 
+      if (!subgraphNode.graph)
+        throw new NullGraphError(
+          `SubgraphNode ${subgraphNode.id} has no graph during input resolution`
+        )
       const outerLink = subgraphNode.graph.getLink(linkId)
       if (!outerLink)
         throw new InvalidLinkError(
           `No outer link found for slot [${link.origin_slot}] ${input.name}`
         )
 
-      const subgraphNodeExecutionId = this.subgraphNodePath.join(':')
+      const subgraphNodeExecutionId: ExecutionId =
+        this.subgraphNodePath.join(':')
       const subgraphNodeDto = this.nodesByExecutionId.get(
         subgraphNodeExecutionId
       )
@@ -223,7 +225,7 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
         `No input node found for id [${this.id}] slot [${slot}] ${input.name}`
       )
 
-    const outputNodeExecutionId = [
+    const outputNodeExecutionId: ExecutionId = [
       ...this.subgraphNodePath,
       outputNode.id
     ].join(':')
@@ -266,10 +268,13 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
     }
     visited.add(uniqueId)
 
+    // Muted nodes produce no output
+    if (this.mode === LGraphEventMode.NEVER) return
+
     // Upstreamed: Bypass nodes are bypassed using the first input with matching type
     if (this.mode === LGraphEventMode.BYPASS) {
       // Bypass nodes by finding first input with matching type
-      const matchingIndex = this.#getBypassSlotIndex(slot, type)
+      const matchingIndex = this._getBypassSlotIndex(slot, type)
 
       // No input types match - bypass not possible
       if (matchingIndex === -1) {
@@ -285,9 +290,23 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
 
     const { node } = this
     if (node.isSubgraphNode())
-      return this.#resolveSubgraphOutput(slot, type, visited)
+      return this._resolveSubgraphOutput(slot, type, visited)
 
     if (node.isVirtualNode) {
+      // Cross-graph virtual nodes (e.g. Set/Get) resolve their source directly.
+      const virtualSource = this.node.resolveVirtualOutput?.(slot)
+      if (virtualSource) {
+        const inputNodeDto = [...this.nodesByExecutionId.values()].find(
+          (dto) =>
+            dto instanceof ExecutableNodeDTO && dto.node === virtualSource.node
+        )
+        if (!inputNodeDto)
+          throw new Error(
+            `No DTO found for virtual source node [${virtualSource.node.id}]`
+          )
+
+        return inputNodeDto.resolveOutput(virtualSource.slot, type, visited)
+      }
       const virtualLink = this.node.getInputLink(slot)
       if (virtualLink) {
         const { inputNode } = virtualLink.resolve(this.graph)
@@ -296,7 +315,7 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
             `Virtual node failed to resolve parent [${this.id}] slot [${slot}]`
           )
 
-        const inputNodeExecutionId = [
+        const inputNodeExecutionId: ExecutionId = [
           ...this.subgraphNodePath,
           inputNode.id
         ].join(':')
@@ -325,7 +344,7 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
    * @param type The type of the final target input (so type list matches are accurate)
    * @returns The index of the input slot on this node, otherwise `-1`.
    */
-  #getBypassSlotIndex(slot: number, type: ISlotType) {
+  private _getBypassSlotIndex(slot: number, type: ISlotType) {
     const { inputs } = this
     const oppositeInput = inputs[slot]
     const outputType = this.node.outputs[slot].type
@@ -362,7 +381,7 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
    * @param visited A set of unique IDs to guard against infinite recursion. See {@link resolveInput}.
    * @returns A DTO for the node, and the origin ID / slot index of the output.
    */
-  #resolveSubgraphOutput(
+  private _resolveSubgraphOutput(
     slot: number,
     type: ISlotType,
     visited: Set<string>
@@ -388,7 +407,7 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
       )
 
     // Recurse into the subgraph
-    const innerNodeExecutionId = [
+    const innerNodeExecutionId: ExecutionId = [
       ...this.subgraphNodePath,
       node.id,
       innerNode.id

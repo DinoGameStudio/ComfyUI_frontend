@@ -1,8 +1,8 @@
 <template>
-  <div class="relative">
+  <div class="relative" @pointerdown.stop>
     <div class="mb-4">
       <Button
-        class="text-base-foreground w-full border-0 bg-secondary-background hover:bg-secondary-background-hover"
+        class="w-full border-0 bg-secondary-background text-base-foreground hover:bg-secondary-background-hover"
         :disabled="isRecording || readonly"
         @click="handleStartRecording"
       >
@@ -12,11 +12,11 @@
     </div>
     <div
       v-if="isRecording || isPlaying || recordedURL"
-      class="flex h-14 w-full items-center gap-4 rounded-lg px-4 bg-node-component-surface text-text-secondary"
+      class="flex h-14 w-full min-w-0 items-center gap-2 rounded-lg bg-node-component-surface px-3 text-text-secondary"
     >
       <!-- Recording Status -->
-      <div class="flex min-w-30 items-center gap-2">
-        <span class="min-w-20 text-xs">
+      <div class="flex shrink-0 items-center gap-1">
+        <span class="text-xs">
           {{
             isRecording
               ? t('g.listening', 'Listening...')
@@ -27,15 +27,15 @@
                   : ''
           }}
         </span>
-        <span class="min-w-10 text-sm">{{ formatTime(timer) }}</span>
+        <span class="text-sm">{{ formatTime(timer) }}</span>
       </div>
 
       <!-- Waveform Visualization -->
-      <div class="flex h-8 flex-1 items-center gap-2 overflow-x-clip">
+      <div class="flex h-8 min-w-0 flex-1 items-center gap-2 overflow-hidden">
         <div
           v-for="(bar, index) in waveformBars"
           :key="index"
-          class="max-h-8 min-h-1 w-0.75 rounded-[1.5px] bg-slate-100 transition-all duration-100"
+          class="max-h-8 min-h-1 w-0.75 rounded-[1.5px] bg-text-secondary transition-all duration-100"
           :style="{ height: bar.height + 'px' }"
           :title="`Bar ${index + 1}: ${bar.height}px`"
         />
@@ -45,7 +45,7 @@
       <button
         v-if="isRecording"
         :title="t('g.stopRecording', 'Stop Recording')"
-        class="flex size-8 animate-pulse items-center justify-center rounded-full border-0 bg-smoke-500/33 transition-colors"
+        class="flex size-8 shrink-0 animate-pulse items-center justify-center rounded-full border-0 bg-smoke-500/33 transition-colors"
         @click="handleStopRecording"
       >
         <div class="size-2.5 rounded-sm bg-danger-100" />
@@ -54,19 +54,19 @@
       <button
         v-else-if="!isRecording && recordedURL && !isPlaying"
         :title="t('g.playRecording') || 'Play Recording'"
-        class="flex size-8 items-center justify-center rounded-full border-0 bg-smoke-500/33 transition-colors"
+        class="flex size-8 shrink-0 items-center justify-center rounded-full border-0 bg-smoke-500/33 transition-colors"
         @click="handlePlayRecording"
       >
-        <i class="text-text-secondary icon-[lucide--play] size-4" />
+        <i class="icon-[lucide--play] size-4 text-text-secondary" />
       </button>
 
       <button
         v-else-if="isPlaying"
         :title="t('g.stopPlayback') || 'Stop Playback'"
-        class="flex size-8 items-center justify-center rounded-full border-0 bg-smoke-500/33 transition-colors"
+        class="flex size-8 shrink-0 items-center justify-center rounded-full border-0 bg-smoke-500/33 transition-colors"
         @click="handleStopPlayback"
       >
-        <i class="text-text-secondary icon-[lucide--square] size-4" />
+        <i class="icon-[lucide--square] size-4 text-text-secondary" />
       </button>
     </div>
     <audio
@@ -85,18 +85,19 @@
 import { useIntervalFn } from '@vueuse/core'
 import { Button } from 'primevue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
-import { t } from '@/i18n'
 import type { LGraphNode } from '@/lib/litegraph/src/LGraphNode'
-import type { IBaseWidget } from '@/lib/litegraph/src/types/widgets'
 import { useToastStore } from '@/platform/updates/common/toastStore'
 import { app } from '@/scripts/app'
-import { useAudioService } from '@/services/audioService'
+import { isDOMWidget } from '@/scripts/domWidget'
 
 import { useAudioPlayback } from '../composables/audio/useAudioPlayback'
 import { useAudioRecorder } from '../composables/audio/useAudioRecorder'
 import { useAudioWaveform } from '../composables/audio/useAudioWaveform'
-import { formatTime } from '../utils/audioUtils'
+import { formatTime } from '@/utils/formatUtil'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   readonly?: boolean
@@ -106,12 +107,14 @@ const props = defineProps<{
 // Audio element ref
 const audioRef = ref<HTMLAudioElement>()
 
-// Keep track of the last uploaded path as a backup
-let lastUploadedPath = ''
-
 // Composables
 const recorder = useAudioRecorder({
-  onRecordingComplete: handleRecordingComplete,
+  onRecordingComplete: async (blob) => handleRecordingComplete(blob),
+  onStop: () => {
+    pauseTimer()
+    waveform.stopWaveform()
+    waveform.dispose()
+  },
   onError: () => {
     useToastStore().addAlert(
       t('g.micPermissionDenied') || 'Microphone permission denied'
@@ -152,20 +155,33 @@ const { isPlaying, audioElementKey } = playback
 // Computed for waveform animation
 const isWaveformActive = computed(() => isRecording.value || isPlaying.value)
 
-const modelValue = defineModel<string>({ default: '' })
-
 const litegraphNode = computed(() => {
   if (!props.nodeId || !app.canvas.graph) return null
   return app.canvas.graph.getNodeById(props.nodeId) as LGraphNode | null
 })
 
-async function handleRecordingComplete(blob: Blob) {
-  try {
-    const path = await useAudioService().convertBlobToFileAndSubmit(blob)
-    modelValue.value = path
-    lastUploadedPath = path
-  } catch (e) {
-    useToastStore().addAlert('Failed to upload recorded audio')
+function handleRecordingComplete(blob: Blob) {
+  // Create a widget-owned blob URL (independent of useAudioRecorder's
+  // recordedURL which gets revoked on re-record or unmount) and set it
+  // on the litegraph audioUI DOM widget's element. The original
+  // serializeValue (in uploadAudio.ts) reads element.src, fetches the
+  // blob, and uploads at serialization time.
+  const node = litegraphNode.value
+  if (!node?.widgets) return
+  for (const w of node.widgets) {
+    if (
+      !(
+        isDOMWidget<HTMLAudioElement, string>(w) &&
+        w.element instanceof HTMLAudioElement
+      )
+    )
+      continue
+
+    if (w.element.src.startsWith('blob:')) {
+      URL.revokeObjectURL(w.element.src)
+    }
+    w.element.src = URL.createObjectURL(blob)
+    break
   }
 }
 
@@ -196,8 +212,6 @@ async function handleStartRecording() {
 
 function handleStopRecording() {
   recorder.stopRecording()
-  pauseTimer()
-  waveform.stopWaveform()
 }
 
 async function handlePlayRecording() {
@@ -256,42 +270,8 @@ function handlePlaybackEnded() {
   }
 }
 
-// Serialization function for workflow execution
-async function serializeValue() {
-  if (isRecording.value && recorder.mediaRecorder.value) {
-    recorder.mediaRecorder.value.stop()
-
-    await new Promise((resolve, reject) => {
-      let attempts = 0
-      const maxAttempts = 50 // 5 seconds max (50 * 100ms)
-      const checkRecording = () => {
-        if (!isRecording.value && modelValue.value) {
-          resolve(undefined)
-        } else if (++attempts >= maxAttempts) {
-          reject(new Error('Recording serialization timeout after 5 seconds'))
-        } else {
-          setTimeout(checkRecording, 100)
-        }
-      }
-      checkRecording()
-    })
-  }
-
-  return modelValue.value || lastUploadedPath || ''
-}
-
-function registerWidgetSerialization() {
-  const node = litegraphNode.value
-  if (!node?.widgets) return
-  const targetWidget = node.widgets.find((w: IBaseWidget) => w.name === 'audio')
-  if (targetWidget) {
-    targetWidget.serializeValue = serializeValue
-  }
-}
-
 onMounted(() => {
   waveform.initWaveform()
-  registerWidgetSerialization()
 })
 
 onUnmounted(() => {

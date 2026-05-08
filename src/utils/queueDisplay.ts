@@ -3,8 +3,8 @@ import type { JobState } from '@/types/queue'
 import { formatDuration } from '@/utils/formatUtil'
 import { clampPercentInt, formatPercent0 } from '@/utils/numberUtil'
 
-type BuildJobDisplayCtx = {
-  t: (k: string, v?: Record<string, any>) => string
+export type BuildJobDisplayCtx = {
+  t: (k: string, v?: Record<string, unknown>) => string
   locale: string
   formatClockTimeFn: (ts: number, locale: string) => string
   isActive: boolean
@@ -43,8 +43,8 @@ export const iconForJobState = (state: JobState): string => {
 
 const buildTitle = (task: TaskItemImpl, t: (k: string) => string): string => {
   const prefix = t('g.job')
-  const shortId = String(task.promptId ?? '').split('-')[0]
-  const idx = task.queueIndex
+  const shortId = String(task.jobId ?? '').split('-')[0]
+  const idx = task.job.priority
   if (typeof idx === 'number') return `${prefix} #${idx}`
   if (shortId) return `${prefix} ${shortId}`
   return prefix

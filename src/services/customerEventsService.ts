@@ -1,10 +1,10 @@
 import type { AxiosError, AxiosResponse } from 'axios'
 import axios from 'axios'
 import { ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 
 import { getComfyApiBaseUrl } from '@/config/comfyApi'
-import { useFirebaseAuthStore } from '@/stores/firebaseAuthStore'
+import { d } from '@/i18n'
+import { useAuthStore } from '@/stores/authStore'
 import type { components, operations } from '@/types/comfyRegistryTypes'
 import { isAbortError } from '@/utils/typeGuardUtil'
 
@@ -33,7 +33,6 @@ const customerApiClient = axios.create({
 export const useCustomerEventsService = () => {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
-  const { d } = useI18n()
 
   watch(
     () => getComfyApiBaseUrl(),
@@ -122,14 +121,15 @@ export const useCustomerEventsService = () => {
       .join(' ')
   }
 
-  function formatJsonValue(value: any) {
+  function formatJsonValue(value: unknown) {
     if (typeof value === 'number') {
-      // Format numbers with commas and decimals if needed
       return value.toLocaleString()
     }
-    if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}/)) {
-      // Format dates nicely
-      return new Date(value).toLocaleString()
+    if (typeof value === 'string') {
+      const date = new Date(value)
+      if (!Number.isNaN(date.getTime()) && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+        return d(date, { dateStyle: 'medium', timeStyle: 'short' })
+      }
     }
     return value
   }
@@ -180,7 +180,7 @@ export const useCustomerEventsService = () => {
     }
 
     // Get auth headers
-    const authHeaders = await useFirebaseAuthStore().getAuthHeader()
+    const authHeaders = await useAuthStore().getAuthHeader()
     if (!authHeaders) {
       error.value = 'Authentication header is missing'
       return null

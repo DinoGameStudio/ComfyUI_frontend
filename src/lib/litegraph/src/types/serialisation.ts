@@ -1,7 +1,12 @@
 import type { UUID } from '@/lib/litegraph/src/utils/uuid'
 
-import type { LGraphConfig, LGraphExtra, LGraphState } from '../LGraph'
-import type { IGraphGroupFlags } from '../LGraphGroup'
+import type {
+  LGraphConfig,
+  LGraphExtra,
+  LGraphState,
+  SubgraphId
+} from '../LGraph'
+import type { GroupId, IGraphGroupFlags } from '../LGraphGroup'
 import type { NodeId, NodeProperty } from '../LGraphNode'
 import type { LinkId, SerialisedLLinkArray } from '../LLink'
 import type { FloatingRerouteSlot, RerouteId } from '../Reroute'
@@ -110,7 +115,9 @@ export interface ExportedSubgraphInstance extends NodeSubgraphSharedProps {
    * The ID of the actual subgraph definition.
    * @see {@link ExportedSubgraph.subgraphs}
    */
-  type: UUID
+  type: SubgraphId
+  /** Custom properties for this subgraph instance */
+  properties?: Dictionary<NodeProperty | undefined>
 }
 
 /**
@@ -119,7 +126,7 @@ export interface ExportedSubgraphInstance extends NodeSubgraphSharedProps {
  */
 export interface ISerialisedGraph extends BaseExportedGraph {
   last_node_id: NodeId
-  last_link_id: number
+  last_link_id: LinkId
   nodes: ISerialisedNode[]
   links: SerialisedLLinkArray[]
   floatingLinks?: SerialisableLLink[]
@@ -135,6 +142,10 @@ export interface ISerialisedGraph extends BaseExportedGraph {
 export interface ExportedSubgraph extends SerialisableGraph {
   /** The display name of the subgraph. */
   name: string
+  /** Optional category for organizing subgraph blueprints in the node library. */
+  category?: string
+  /** Optional description shown as tooltip when hovering over the subgraph node. */
+  description?: string
   inputNode: ExportedSubgraphIONode
   outputNode: ExportedSubgraphIONode
   /** Ordered list of inputs to the subgraph itself. Similar to a reroute, with the input side in the graph, and the output side in the subgraph. */
@@ -171,7 +182,7 @@ export interface ExposedWidget {
 
 /** Serialised LGraphGroup */
 export interface ISerialisedGroup {
-  id: number
+  id: GroupId
   title: string
   bounding: number[]
   color?: string

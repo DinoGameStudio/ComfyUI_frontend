@@ -22,7 +22,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, nextTick, ref, render, watch } from 'vue'
+import {
+  computed,
+  getCurrentInstance,
+  h,
+  nextTick,
+  ref,
+  render,
+  watch
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import FolderCustomizationDialog from '@/components/common/CustomizationDialog.vue'
@@ -41,6 +49,8 @@ import type {
   TreeNode
 } from '@/types/treeExplorerTypes'
 
+const instance = getCurrentInstance()!
+const appContext = instance.appContext
 const props = defineProps<{
   filteredNodeDefs: ComfyNodeDefImpl[]
   openNodeHelp: (nodeDef: ComfyNodeDefImpl) => void
@@ -154,6 +164,7 @@ const renderedBookmarkedRoot = computed<TreeExplorerNode<ComfyNodeDefImpl>>(
         },
         renderDragPreview(container) {
           const vnode = h(NodePreview, { nodeDef: node.data })
+          vnode.appContext = appContext
           render(vnode, container)
           return () => {
             render(null, container)
@@ -162,20 +173,17 @@ const renderedBookmarkedRoot = computed<TreeExplorerNode<ComfyNodeDefImpl>>(
         droppable: !node.leaf,
         async handleDrop(data: TreeExplorerDragAndDropData<ComfyNodeDefImpl>) {
           const nodeDefToAdd = data.data.data
+          if (!nodeDefToAdd) return
           // Remove bookmark if the source is the top level bookmarked node.
-          // @ts-expect-error fixme ts strict error
           if (nodeBookmarkStore.isBookmarked(nodeDefToAdd)) {
-            // @ts-expect-error fixme ts strict error
             await nodeBookmarkStore.toggleBookmark(nodeDefToAdd)
           }
           const folderNodeDef = node.data as ComfyNodeDefImpl
-          // @ts-expect-error fixme ts strict error
           const nodePath = folderNodeDef.category + '/' + nodeDefToAdd.name
           await nodeBookmarkStore.addBookmark(nodePath)
         },
         handleClick(e: MouseEvent) {
-          if (this.leaf) {
-            // @ts-expect-error fixme ts strict error
+          if (this.leaf && this.data) {
             useLitegraphService().addNodeOnGraph(this.data)
           } else {
             toggleNodeOnEvent(e, node)
@@ -194,7 +202,7 @@ const renderedBookmarkedRoot = computed<TreeExplorerNode<ComfyNodeDefImpl>>(
                 }
               },
               async handleDelete() {
-                // @ts-expect-error fixme ts strict error
+                if (!this.data) return
                 await nodeBookmarkStore.deleteBookmarkFolder(this.data)
               }
             })
@@ -204,7 +212,11 @@ const renderedBookmarkedRoot = computed<TreeExplorerNode<ComfyNodeDefImpl>>(
   }
 )
 
-const treeExplorerRef = ref<InstanceType<typeof TreeExplorer> | null>(null)
+interface TreeExplorerExposed {
+  addFolderCommand: (targetNodeKey: string) => void
+}
+
+const treeExplorerRef = ref<TreeExplorerExposed | null>(null)
 defineExpose({
   addNewBookmarkFolder: () => treeExplorerRef.value?.addFolderCommand('root')
 })

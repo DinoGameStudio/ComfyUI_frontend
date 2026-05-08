@@ -1,11 +1,14 @@
 import { expect } from '@playwright/test'
 
-import { type ComfyPage, comfyPageFixture as test } from '../fixtures/ComfyPage'
+import { comfyPageFixture as test } from '@e2e/fixtures/ComfyPage'
+import type { ComfyPage } from '@e2e/fixtures/ComfyPage'
 
-test.describe('Workflow Tab Thumbnails', () => {
+test.describe('Workflow Tab Thumbnails', { tag: '@workflow' }, () => {
   test.beforeEach(async ({ comfyPage }) => {
-    await comfyPage.setSetting('Comfy.UseNewMenu', 'Top')
-    await comfyPage.setSetting('Comfy.Workflow.WorkflowTabsPosition', 'Topbar')
+    await comfyPage.settings.setSetting(
+      'Comfy.Workflow.WorkflowTabsPosition',
+      'Topbar'
+    )
     await comfyPage.setup()
   })
 
@@ -26,7 +29,7 @@ test.describe('Workflow Tab Thumbnails', () => {
 
     const popover = comfyPage.page.locator('.workflow-popover-fade')
     await expect(popover).toHaveCount(1)
-    await expect(popover).toBeVisible({ timeout: 500 })
+    await expect(popover).toBeVisible()
     if (name) {
       await expect(popover).toContainText(name)
     }
@@ -79,19 +82,21 @@ test.describe('Workflow Tab Thumbnails', () => {
       1,
       'Unsaved Workflow (2)'
     )
-    await expect(thumbnailImg).not.toBeVisible()
+    await expect(thumbnailImg).toBeHidden()
   })
 
   async function addNode(comfyPage: ComfyPage, category: string, node: string) {
     const canvasArea = await comfyPage.canvas.boundingBox()
 
     await comfyPage.page.mouse.move(
-      canvasArea!.x + canvasArea!.width - 100,
-      100
+      canvasArea!.x + canvasArea!.width / 2,
+      canvasArea!.y + canvasArea!.height / 2
     )
-    await comfyPage.delay(300) // Wait for the popover to hide
+    await expect(comfyPage.page.locator('.workflow-popover-fade')).toHaveCount(
+      0
+    )
 
-    await comfyPage.rightClickCanvas(200, 200)
+    await comfyPage.canvasOps.rightClick(200, 200)
     await comfyPage.page.getByText('Add Node').click()
     await comfyPage.nextFrame()
     await comfyPage.page.getByText(category).click()

@@ -3,6 +3,16 @@ import type { InjectionKey, Ref } from 'vue'
 import type { AlgoliaNodePack } from '@/types/algoliaTypes'
 import type { components } from '@/types/comfyRegistryTypes'
 
+/**
+ * Identifier for a node pack from the Comfy Registry / Manager.
+ *
+ * Backed by the registry pack's `id` (typically a slug like `cnr_id` or
+ * `aux_id`, possibly suffixed with `@version` for disabled packs). This alias
+ * names that primitive at use sites (manager store, services, composables)
+ * without changing structural typing.
+ */
+export type NodePackId = string
+
 export type RegistryPack = components['schemas']['Node']
 export type MergedNodePack = RegistryPack & AlgoliaNodePack
 export const isMergedNodePack = (
@@ -14,16 +24,13 @@ export const IsInstallingKey: InjectionKey<Ref<boolean>> =
 
 export enum ManagerTab {
   All = 'all',
-  Installed = 'installed',
+  NotInstalled = 'notInstalled',
+  AllInstalled = 'allInstalled',
+  UpdateAvailable = 'updateAvailable',
+  Conflicting = 'conflicting',
   Workflow = 'workflow',
   Missing = 'missing',
-  UpdateAvailable = 'updateAvailable'
-}
-
-export interface TabItem {
-  id: ManagerTab
-  label: string
-  icon: string
+  Unresolved = 'unresolved'
 }
 
 export type TaskLog = {
@@ -35,11 +42,6 @@ export type TaskLog = {
 export interface UseNodePacksOptions {
   immediate?: boolean
   maxConcurrent?: number
-}
-
-export interface SearchOption<T> {
-  id: T
-  label: string
 }
 
 export enum SortableAlgoliaField {

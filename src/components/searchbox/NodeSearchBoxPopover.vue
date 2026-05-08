@@ -6,10 +6,13 @@
       :dismissable-mask="dismissable"
       :pt="{
         root: {
-          class: 'invisible-dialog-root',
-          role: 'search'
+          class: useSearchBoxV2
+            ? 'w-full max-w-[56rem] min-w-[32rem] max-md:min-w-0 bg-transparent border-0 overflow-visible'
+            : 'invisible-dialog-root'
         },
-        mask: { class: 'node-search-box-dialog-mask' },
+        mask: {
+          class: useSearchBoxV2 ? 'items-start' : 'node-search-box-dialog-mask'
+        },
         transition: {
           enterFromClass: 'opacity-0 scale-75',
           // 100ms is the duration of the transition in the dialog component
@@ -21,7 +24,26 @@
       @hide="clearFilters"
     >
       <template #container>
+        <div v-if="useSearchBoxV2" role="search" class="relative">
+          <NodeSearchContent
+            :filters="nodeFilters"
+            @add-filter="addFilter"
+            @remove-filter="removeFilter"
+            @add-node="addNode"
+            @hover-node="hoveredNodeDef = $event"
+          />
+          <NodePreviewCard
+            v-if="hoveredNodeDef && enableNodePreview"
+            :key="hoveredNodeDef.name"
+            :node-def="hoveredNodeDef"
+            :scale-factor="0.625"
+            show-category-path
+            inert
+            class="absolute top-0 left-full ml-3"
+          />
+        </div>
         <NodeSearchBox
+          v-else
           :filters="nodeFilters"
           @add-filter="addFilter"
           @remove-filter="removeFilter"
@@ -33,7 +55,7 @@
 </template>
 
 <script setup lang="ts">
-import { useEventListener } from '@vueuse/core'
+import { useEventListener, useWindowSize } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import Dialog from 'primevue/dialog'
 import { computed, ref, toRaw, watch, watchEffect } from 'vue'
@@ -43,6 +65,7 @@ import type { LiteGraphCanvasEvent } from '@/lib/litegraph/src/litegraph'
 import { LGraphNode, LiteGraph } from '@/lib/litegraph/src/litegraph'
 import type { CanvasPointerEvent } from '@/lib/litegraph/src/types/events'
 import { useSettingStore } from '@/platform/settings/settingStore'
+import { useSurveyFeatureTracking } from '@/platform/surveys/useSurveyFeatureTracking'
 import { useWorkflowStore } from '@/platform/workflow/management/stores/workflowStore'
 import { useCanvasStore } from '@/renderer/core/canvas/canvasStore'
 import { useLitegraphService } from '@/services/litegraphService'
@@ -52,6 +75,9 @@ import { useSearchBoxStore } from '@/stores/workspace/searchBoxStore'
 import { LinkReleaseTriggerAction } from '@/types/searchBoxTypes'
 import type { FuseFilterWithValue } from '@/utils/fuseUtil'
 
+import NodePreviewCard from '@/components/node/NodePreviewCard.vue'
+
+import NodeSearchContent from './v2/NodeSearchContent.vue'
 import NodeSearchBox from './NodeSearchBox.vue'
 
 let triggerEvent: CanvasPointerEvent | null = null
@@ -61,9 +87,21 @@ let disconnectOnReset = false
 const settingStore = useSettingStore()
 const searchBoxStore = useSearchBoxStore()
 const litegraphService = useLitegraphService()
+const { trackFeatureUsed } = useSurveyFeatureTracking('node-search')
 
-const { visible, newSearchBoxEnabled } = storeToRefs(searchBoxStore)
+const { visible, newSearchBoxEnabled, useSearchBoxV2 } =
+  storeToRefs(searchBoxStore)
 const dismissable = ref(true)
+const hoveredNodeDef = ref<ComfyNodeDefImpl | null>(null)
+const { width: windowWidth } = useWindowSize()
+// Minimum viewport width for the preview panel to fit beside the dialog
+const MIN_WIDTH_FOR_PREVIEW = 1320
+const enableNodePreview = computed(
+  () =>
+    useSearchBoxV2.value &&
+    settingStore.get('Comfy.NodeSearchBoxImpl.NodePreview') &&
+    windowWidth.value >= MIN_WIDTH_FOR_PREVIEW
+)
 function getNewNodeLocation(): Point {
   return triggerEvent
     ? [triggerEvent.canvasX, triggerEvent.canvasY]
@@ -71,7 +109,10 @@ function getNewNodeLocation(): Point {
 }
 const nodeFilters = ref<FuseFilterWithValue<ComfyNodeDefImpl, string>[]>([])
 function addFilter(filter: FuseFilterWithValue<ComfyNodeDefImpl, string>) {
-  nodeFilters.value.push(filter)
+  const isDuplicate = nodeFilters.value.some(
+    (f) => f.filterDef.id === filter.filterDef.id && f.value === filter.value
+  )
+  if (!isDuplicate) nodeFilters.value.push(filter)
 }
 function removeFilter(filter: FuseFilterWithValue<ComfyNodeDefImpl, string>) {
   nodeFilters.value = nodeFilters.value.filter(
@@ -80,16 +121,21 @@ function removeFilter(filter: FuseFilterWithValue<ComfyNodeDefImpl, string>) {
 }
 function clearFilters() {
   nodeFilters.value = []
+  hoveredNodeDef.value = null
 }
 function closeDialog() {
   visible.value = false
 }
 const canvasStore = useCanvasStore()
 
-function addNode(nodeDef: ComfyNodeDefImpl) {
-  const node = litegraphService.addNodeOnGraph(nodeDef, {
-    pos: getNewNodeLocation()
-  })
+function addNode(nodeDef: ComfyNodeDefImpl, dragEvent?: MouseEvent) {
+  const followCursor = settingStore.get('Comfy.NodeSearchBoxImpl.FollowCursor')
+  const node = litegraphService.addNodeOnGraph(
+    nodeDef,
+    { pos: getNewNodeLocation() },
+    { ghost: useSearchBoxV2.value && followCursor, dragEvent }
+  )
+  if (!node) return
 
   if (disconnectOnReset && triggerEvent) {
     canvasStore.getCanvas().linkConnector.connectToNode(node, triggerEvent)
@@ -100,7 +146,7 @@ function addNode(nodeDef: ComfyNodeDefImpl) {
   disconnectOnReset = false
 
   // Notify changeTracker - new step should be added
-  useWorkflowStore().activeWorkflow?.changeTracker?.checkState()
+  useWorkflowStore().activeWorkflow?.changeTracker?.captureCanvasState()
   window.requestAnimationFrame(closeDialog)
 }
 
@@ -124,6 +170,7 @@ function getFirstLink() {
 
 const nodeDefStore = useNodeDefStore()
 function showNewSearchBox(e: CanvasPointerEvent | null) {
+  trackFeatureUsed()
   const firstLink = getFirstLink()
   if (firstLink) {
     const filter =

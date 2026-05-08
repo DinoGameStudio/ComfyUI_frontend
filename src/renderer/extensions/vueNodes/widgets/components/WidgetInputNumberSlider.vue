@@ -1,10 +1,17 @@
 <template>
   <WidgetLayoutField :widget="widget">
-    <div :class="cn(WidgetInputBaseClass, 'flex items-center gap-2 pl-3 pr-2')">
+    <div
+      :class="
+        cn(
+          WidgetInputBaseClass,
+          'flex items-center gap-2 pr-2 pl-3 not-disabled:hover:bg-component-node-widget-background-hovered'
+        )
+      "
+    >
       <Slider
         :model-value="[modelValue]"
         v-bind="filteredProps"
-        class="flex-grow text-xs"
+        class="grow text-xs"
         :step="stepValue"
         :aria-label="widget.name"
         @update:model-value="updateLocalValue"
@@ -33,7 +40,7 @@ import { computed, ref } from 'vue'
 
 import Slider from '@/components/ui/slider/Slider.vue'
 import type { SimplifiedWidget } from '@/types/simplifiedWidget'
-import { cn } from '@/utils/tailwindUtil'
+import { cn } from '@comfyorg/tailwind-utils'
 import {
   STANDARD_EXCLUDED_PROPS,
   filterWidgetProps

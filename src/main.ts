@@ -12,8 +12,13 @@ import { createApp } from 'vue'
 import { VueFire, VueFireAuth } from 'vuefire'
 
 import { getFirebaseConfig } from '@/config/firebase'
+import {
+  configValueOrDefault,
+  remoteConfig
+} from '@/platform/remoteConfig/remoteConfig'
 import '@/lib/litegraph/public/css/litegraph.css'
 import router from '@/router'
+import { useBootstrapStore } from '@/stores/bootstrapStore'
 
 import App from './App.vue'
 // Intentionally relative import to ensure the CSS is loaded in the right order (after litegraph.css)
@@ -24,12 +29,15 @@ import { i18n } from './i18n'
  * CRITICAL: Load remote config FIRST for cloud builds to ensure
  * window.__CONFIG__is available for all modules during initialization
  */
-import { isCloud } from '@/platform/distribution/types'
+const isCloud = __DISTRIBUTION__ === 'cloud'
 
 if (isCloud) {
-  const { loadRemoteConfig } =
-    await import('@/platform/remoteConfig/remoteConfig')
-  await loadRemoteConfig()
+  const { refreshRemoteConfig } =
+    await import('@/platform/remoteConfig/refreshRemoteConfig')
+  await refreshRemoteConfig({ useAuth: false })
+
+  const { initTelemetry } = await import('@/platform/telemetry/initTelemetry')
+  await initTelemetry()
 }
 
 const ComfyUIPreset = definePreset(Aura, {
@@ -43,9 +51,14 @@ const firebaseApp = initializeApp(getFirebaseConfig())
 
 const app = createApp(App)
 const pinia = createPinia()
+
+const sentryDsn = isCloud
+  ? configValueOrDefault(remoteConfig.value, 'sentry_dsn', __SENTRY_DSN__)
+  : __SENTRY_DSN__
+
 Sentry.init({
   app,
-  dsn: __SENTRY_DSN__,
+  dsn: sentryDsn,
   enabled: __SENTRY_ENABLED__,
   release: __COMFYUI_FRONTEND_VERSION__,
   normalizeDepth: 8,
@@ -54,7 +67,14 @@ Sentry.init({
   replaysOnErrorSampleRate: 0,
   // Only set these for non-cloud builds
   ...(isCloud
-    ? {}
+    ? {
+        integrations: [
+          // Disable event target wrapping to reduce overhead on high-frequency
+          // DOM events (pointermove, mousemove, wheel). Sentry still captures
+          // errors via window.onerror and unhandledrejection.
+          Sentry.browserApiErrorsIntegration({ eventTarget: false })
+        ]
+      }
     : {
         integrations: [],
         autoSessionTracking: false,
@@ -87,5 +107,8 @@ app
     firebaseApp,
     modules: [VueFireAuth()]
   })
+
+const bootstrapStore = useBootstrapStore(pinia)
+void bootstrapStore.startStoreBootstrap()
 
 app.mount('#vue-app')

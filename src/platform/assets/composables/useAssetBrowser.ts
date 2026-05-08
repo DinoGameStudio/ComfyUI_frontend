@@ -2,49 +2,31 @@ import { computed, ref } from 'vue'
 import type { Ref } from 'vue'
 import { useFuse } from '@vueuse/integrations/useFuse'
 import type { UseFuseOptions } from '@vueuse/integrations/useFuse'
+import { storeToRefs } from 'pinia'
 
-import { d, t } from '@/i18n'
-import type { FilterState } from '@/platform/assets/components/AssetFilterBar.vue'
+import { t } from '@/i18n'
+import type {
+  AssetFilterState,
+  OwnershipOption
+} from '@/platform/assets/types/filterTypes'
 import type { AssetItem } from '@/platform/assets/schemas/assetSchema'
+import { useAssetFilterOptions } from '@/platform/assets/composables/useAssetFilterOptions'
 import {
-  getAssetBaseModel,
-  getAssetDescription
+  filterByBaseModels,
+  filterByCategory,
+  filterByFileFormats,
+  filterByOwnership
+} from '@/platform/assets/utils/assetFilterUtils'
+import {
+  getAssetBaseModels,
+  getAssetFilename
 } from '@/platform/assets/utils/assetMetadataUtils'
+import { MODELS_TAG } from '@/platform/assets/services/assetService'
+import { sortAssets } from '@/platform/assets/utils/assetSortUtils'
+import { useAssetDownloadStore } from '@/stores/assetDownloadStore'
+import type { NavGroupData, NavItemData } from '@/types/navTypes'
 
-export type OwnershipOption = 'all' | 'my-models' | 'public-models'
-
-function filterByCategory(category: string) {
-  return (asset: AssetItem) => {
-    return category === 'all' || asset.tags.includes(category)
-  }
-}
-
-function filterByFileFormats(formats: string[]) {
-  return (asset: AssetItem) => {
-    if (formats.length === 0) return true
-    const formatSet = new Set(formats)
-    const extension = asset.name.split('.').pop()?.toLowerCase()
-    return extension ? formatSet.has(extension) : false
-  }
-}
-
-function filterByBaseModels(models: string[]) {
-  return (asset: AssetItem) => {
-    if (models.length === 0) return true
-    const modelSet = new Set(models)
-    const baseModel = getAssetBaseModel(asset)
-    return baseModel ? modelSet.has(baseModel) : false
-  }
-}
-
-function filterByOwnership(ownership: OwnershipOption) {
-  return (asset: AssetItem) => {
-    if (ownership === 'all') return true
-    if (ownership === 'my-models') return asset.is_immutable === false
-    if (ownership === 'public-models') return asset.is_immutable === true
-    return true
-  }
-}
+type NavId = 'all' | 'imported' | (string & {})
 
 type AssetBadge = {
   label: string
@@ -53,13 +35,52 @@ type AssetBadge = {
 
 // Display properties for transformed assets
 export interface AssetDisplayItem extends AssetItem {
-  description: string
+  secondaryText: string
   badges: AssetBadge[]
   stats: {
-    formattedDate?: string
     downloadCount?: string
     stars?: string
   }
+}
+
+const displayItemCache = new WeakMap<AssetItem, AssetDisplayItem>()
+
+function buildDisplayItem(asset: AssetItem): AssetDisplayItem {
+  const badges: AssetBadge[] = []
+
+  const typeTag = asset.tags.find((tag) => tag !== 'models')
+  if (typeTag) {
+    const badgeLabel = typeTag.includes('/')
+      ? typeTag.substring(typeTag.indexOf('/') + 1)
+      : typeTag
+
+    badges.push({ label: badgeLabel, type: 'type' })
+  }
+
+  for (const model of getAssetBaseModels(asset)) {
+    badges.push({ label: model, type: 'base' })
+  }
+
+  // Intentionally no formatted date here — the WeakMap caches by AssetItem
+  // reference, so a pre-formatted string would pin the locale active at first
+  // transform. AssetCard formats `created_at` at render via `d()` instead.
+  return {
+    ...asset,
+    secondaryText: getAssetFilename(asset),
+    badges,
+    stats: {
+      downloadCount: undefined,
+      stars: undefined
+    }
+  }
+}
+
+function transformAssetForDisplay(asset: AssetItem): AssetDisplayItem {
+  const cached = displayItemCache.get(asset)
+  if (cached) return cached
+  const built = buildDisplayItem(asset)
+  displayItemCache.set(asset, built)
+  return built
 }
 
 /**
@@ -70,88 +91,100 @@ export function useAssetBrowser(
   assetsSource: Ref<AssetItem[] | undefined> = ref<AssetItem[] | undefined>([])
 ) {
   const assets = computed<AssetItem[]>(() => assetsSource.value ?? [])
+  const assetDownloadStore = useAssetDownloadStore()
+  const { sessionDownloadCount } = storeToRefs(assetDownloadStore)
+
   // State
   const searchQuery = ref('')
-  const selectedCategory = ref('all')
-  const filters = ref<FilterState>({
+  const selectedNavItem = ref<NavId>('all')
+  const filters = ref<AssetFilterState>({
     sortBy: 'recent',
     fileFormats: [],
     baseModels: [],
     ownership: 'all'
   })
 
-  // Transform API asset to display asset
-  function transformAssetForDisplay(asset: AssetItem): AssetDisplayItem {
-    // Extract description from metadata or create from tags
-    const typeTag = asset.tags.find((tag) => tag !== 'models')
-    const description =
-      getAssetDescription(asset) ||
-      `${typeTag || t('assetBrowser.unknown')} model`
+  const selectedOwnership = computed<OwnershipOption>(() => {
+    if (typeCategories.value.length <= 1) return filters.value.ownership
+    if (selectedNavItem.value === 'imported') return 'my-models'
+    if (selectedNavItem.value === 'all') return 'all'
+    return filters.value.ownership
+  })
 
-    // Create badges from tags and metadata
-    const badges: AssetBadge[] = []
-
-    // Type badge from non-root tag
-    if (typeTag) {
-      badges.push({ label: typeTag, type: 'type' })
+  const selectedCategory = computed(() => {
+    if (
+      selectedNavItem.value === 'all' ||
+      selectedNavItem.value === 'imported'
+    ) {
+      return 'all'
     }
+    return selectedNavItem.value
+  })
 
-    // Base model badge from metadata
-    const baseModel = getAssetBaseModel(asset)
-    if (baseModel) {
-      badges.push({
-        label: baseModel,
-        type: 'base'
-      })
-    }
-
-    // Create display stats from API data
-    const stats = {
-      formattedDate: d(new Date(asset.created_at), { dateStyle: 'short' }),
-      downloadCount: undefined, // Not available in API
-      stars: undefined // Not available in API
-    }
-
-    return {
-      ...asset,
-      description,
-      badges,
-      stats
-    }
-  }
-
-  const availableCategories = computed(() => {
+  const typeCategories = computed<NavItemData[]>(() => {
     const categories = assets.value
-      .filter((asset) => asset.tags[0] === 'models')
-      .map((asset) => asset.tags[1])
-      .filter((tag): tag is string => typeof tag === 'string' && tag.length > 0)
+      .filter((asset) => asset.tags.includes(MODELS_TAG))
+      .flatMap((asset) =>
+        asset.tags.filter((tag) => tag !== MODELS_TAG && tag.length > 0)
+      )
+      .map((tag) => tag.split('/')[0])
 
-    const uniqueCategories = Array.from(new Set(categories))
+    return Array.from(new Set(categories))
       .sort()
       .map((category) => ({
         id: category,
         label: category.charAt(0).toUpperCase() + category.slice(1),
-        icon: 'icon-[lucide--package]'
+        icon: 'icon-[lucide--folder]'
       }))
+  })
 
-    return [
+  const navItems = computed<(NavItemData | NavGroupData)[]>(() => {
+    const quickFilters: NavItemData[] = [
       {
         id: 'all',
         label: t('assetBrowser.allModels'),
-        icon: 'icon-[lucide--folder]'
+        icon: 'icon-[lucide--list]'
       },
-      ...uniqueCategories
+      {
+        id: 'imported',
+        label: t('assetBrowser.imported'),
+        icon: 'icon-[lucide--folder-input]',
+        badge:
+          sessionDownloadCount.value > 0
+            ? sessionDownloadCount.value
+            : undefined
+      }
+    ]
+
+    if (typeCategories.value.length === 0) {
+      return quickFilters
+    }
+
+    return [
+      ...quickFilters,
+      {
+        title: t('assetBrowser.byType'),
+        items: typeCategories.value,
+        collapsible: false
+      }
     ]
   })
 
-  // Compute content title from selected category
+  const isImportedSelected = computed(
+    () => selectedNavItem.value === 'imported'
+  )
+
+  // Compute content title from selected nav item
   const contentTitle = computed(() => {
-    if (selectedCategory.value === 'all') {
+    if (selectedNavItem.value === 'all') {
       return t('assetBrowser.allModels')
     }
+    if (selectedNavItem.value === 'imported') {
+      return t('assetBrowser.imported')
+    }
 
-    const category = availableCategories.value.find(
-      (cat) => cat.id === selectedCategory.value
+    const category = typeCategories.value.find(
+      (cat) => cat.id === selectedNavItem.value
     )
     return category?.label || t('assetBrowser.assets')
   })
@@ -161,11 +194,33 @@ export function useAssetBrowser(
     return assets.value.filter(filterByCategory(selectedCategory.value))
   })
 
+  const { availableFileFormats, availableBaseModels } = useAssetFilterOptions(
+    categoryFilteredAssets
+  )
+
+  const activeFileFormats = computed(() =>
+    filters.value.fileFormats.filter((f) =>
+      availableFileFormats.value.some((opt) => opt.value === f)
+    )
+  )
+
+  const activeBaseModels = computed(() =>
+    filters.value.baseModels.filter((m) =>
+      availableBaseModels.value.some((opt) => opt.value === m)
+    )
+  )
+
   const fuseOptions: UseFuseOptions<AssetItem> = {
     fuseOptions: {
       keys: [
         { name: 'name', weight: 0.4 },
-        { name: 'tags', weight: 0.3 }
+        { name: 'tags', weight: 0.3 },
+        { name: 'user_metadata.name', weight: 0.4 },
+        { name: 'user_metadata.additional_tags', weight: 0.3 },
+        { name: 'user_metadata.trained_words', weight: 0.3 },
+        { name: 'user_metadata.user_description', weight: 0.3 },
+        { name: 'metadata.name', weight: 0.4 },
+        { name: 'metadata.trained_words', weight: 0.3 }
       ],
       threshold: 0.4, // Higher threshold for typo tolerance (0.0 = exact, 1.0 = match all)
       ignoreLocation: true, // Search anywhere in the string, not just at the beginning
@@ -186,42 +241,29 @@ export function useAssetBrowser(
 
   const filteredAssets = computed(() => {
     const filtered = searchFiltered.value
-      .filter(filterByFileFormats(filters.value.fileFormats))
-      .filter(filterByBaseModels(filters.value.baseModels))
-      .filter(filterByOwnership(filters.value.ownership))
+      .filter(filterByFileFormats(activeFileFormats.value))
+      .filter(filterByBaseModels(activeBaseModels.value))
+      .filter(filterByOwnership(selectedOwnership.value))
 
-    const sortedAssets = [...filtered]
-    sortedAssets.sort((a, b) => {
-      switch (filters.value.sortBy) {
-        case 'name-desc':
-          return b.name.localeCompare(a.name)
-        case 'recent':
-          return (
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          )
-        case 'popular':
-          return a.name.localeCompare(b.name)
-        case 'name-asc':
-        default:
-          return a.name.localeCompare(b.name)
-      }
-    })
+    const sortedAssets = sortAssets(filtered, filters.value.sortBy)
 
     // Transform to display format
     return sortedAssets.map(transformAssetForDisplay)
   })
 
-  function updateFilters(newFilters: FilterState) {
+  function updateFilters(newFilters: AssetFilterState) {
     filters.value = { ...newFilters }
   }
 
   return {
     searchQuery,
+    selectedNavItem,
     selectedCategory,
-    availableCategories,
+    navItems,
     contentTitle,
     categoryFilteredAssets,
     filteredAssets,
+    isImportedSelected,
     updateFilters
   }
 }

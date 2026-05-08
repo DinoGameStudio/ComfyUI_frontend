@@ -1,6 +1,7 @@
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
+import { execSync } from 'child_process'
 import { config as dotenvConfig } from 'dotenv'
 import type { IncomingMessage, ServerResponse } from 'http'
 import { Readable } from 'stream'
@@ -11,8 +12,8 @@ import IconsResolver from 'unplugin-icons/resolver'
 import Icons from 'unplugin-icons/vite'
 import Components from 'unplugin-vue-components/vite'
 import typegpuPlugin from 'unplugin-typegpu/vite'
-import { defineConfig } from 'vite'
-import type { ProxyOptions, UserConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
+import type { ProxyOptions } from 'vite'
 import { createHtmlPlugin } from 'vite-plugin-html'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
@@ -50,6 +51,28 @@ const DISTRIBUTION: 'desktop' | 'localhost' | 'cloud' =
     : IS_CLOUD_URL
       ? 'cloud'
       : 'localhost'
+
+// Nightly builds are from main branch; RC/stable builds are from core/* branches
+// Can be overridden via IS_NIGHTLY env var for testing
+const IS_NIGHTLY = process.env.IS_NIGHTLY === 'true'
+
+// Resolve the frontend git commit hash at build time.
+// Priority: FRONTEND_COMMIT_HASH env var → git rev-parse HEAD → 'unknown'
+// FRONTEND_COMMIT_HASH is an escape hatch for non-git environments (e.g. Docker
+// build containers without .git) where the commit hash can be injected externally.
+let GIT_COMMIT = process.env.FRONTEND_COMMIT_HASH || ''
+if (!GIT_COMMIT) {
+  try {
+    GIT_COMMIT = execSync('git rev-parse HEAD', {
+      timeout: 5000,
+      windowsHide: true
+    })
+      .toString()
+      .trim()
+  } catch {
+    GIT_COMMIT = 'unknown'
+  }
+}
 
 // Disable Vue DevTools for production cloud distribution
 const DISABLE_VUE_PLUGINS =
@@ -141,7 +164,6 @@ export default defineConfig({
       ignored: [
         './browser_tests/**',
         './node_modules/**',
-        './tests-ui/**',
         '.eslintcache',
         '.oxlintrc.json',
         '*.config.{ts,mts}',
@@ -238,6 +260,20 @@ export default defineConfig({
     tailwindcss(),
     typegpuPlugin({}),
     comfyAPIPlugin(IS_DEV),
+    // Exclude proprietary ABCROM fonts from non-cloud builds
+    {
+      name: 'exclude-proprietary-fonts',
+      generateBundle(_options, bundle) {
+        if (DISTRIBUTION !== 'cloud') {
+          // Remove ABCROM font files from bundle
+          for (const [fileName] of Object.entries(bundle)) {
+            if (/ABCROM.*\.(woff2?|ttf|otf)$/i.test(fileName)) {
+              delete bundle[fileName]
+            }
+          }
+        }
+      }
+    },
     // Inject legacy user stylesheet links for desktop/localhost only
     {
       name: 'inject-user-stylesheet-links',
@@ -390,8 +426,8 @@ export default defineConfig({
       : []),
 
     // Sentry sourcemap upload plugin
-    // Only runs during cloud production builds when all Sentry env vars are present
-    // Requires: SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT env vars
+    // Uploads sourcemaps to both staging and prod Sentry projects so that
+    // error stack traces are readable in both environments.
     ...(DISTRIBUTION === 'cloud' &&
     process.env.SENTRY_AUTH_TOKEN &&
     process.env.SENTRY_ORG &&
@@ -403,95 +439,185 @@ export default defineConfig({
             project: process.env.SENTRY_PROJECT,
             authToken: process.env.SENTRY_AUTH_TOKEN,
             sourcemaps: {
-              // Delete source maps after upload to prevent public access
-              filesToDeleteAfterUpload: ['**/*.map']
+              filesToDeleteAfterUpload: process.env.SENTRY_PROJECT_PROD
+                ? []
+                : ['**/*.map']
             }
-          })
+          }),
+          ...(process.env.SENTRY_PROJECT_PROD
+            ? [
+                sentryVitePlugin({
+                  org: process.env.SENTRY_ORG,
+                  project: process.env.SENTRY_PROJECT_PROD,
+                  authToken: process.env.SENTRY_AUTH_TOKEN,
+                  sourcemaps: {
+                    filesToDeleteAfterUpload: ['**/*.map']
+                  }
+                })
+              ]
+            : [])
         ]
       : [])
   ],
 
   build: {
-    minify: SHOULD_MINIFY ? 'esbuild' : false,
+    minify: SHOULD_MINIFY,
     target: 'es2022',
     sourcemap: GENERATE_SOURCEMAP,
-    rollupOptions: {
-      treeshake: true,
-      output: {
-        manualChunks: (id) => {
-          if (!id.includes('node_modules')) {
-            return undefined
-          }
+    // Exclude heavy optional vendor chunks from initial module preload
+    // These chunks are only needed when their features are used (3D, terminal, etc.)
+    modulePreload: {
+      resolveDependencies: (_filename, deps, { hostType }) => {
+        // Only filter for HTML entry points, not for dynamic imports
+        if (hostType !== 'html') return deps
 
-          if (id.includes('primevue') || id.includes('@primeuix')) {
-            return 'vendor-primevue'
-          }
-
-          if (id.includes('@tiptap')) {
-            return 'vendor-tiptap'
-          }
-
-          if (id.includes('chart.js')) {
-            return 'vendor-chart'
-          }
-
-          if (id.includes('three') || id.includes('@sparkjsdev')) {
-            return 'vendor-three'
-          }
-
-          if (id.includes('@xterm')) {
-            return 'vendor-xterm'
-          }
-
-          if (id.includes('/vue') || id.includes('pinia')) {
-            return 'vendor-vue'
-          }
-
-          return 'vendor-other'
-        }
+        // Exclude heavy vendor chunks that should be lazy-loaded
+        // - vendor-three: 3D preview (Load3D nodes)
+        // - vendor-xterm: Terminal emulator (logs panel)
+        // - vendor-tiptap: Rich text editor (markdown widgets)
+        // - vendor-chart: Chart.js (stats/monitoring)
+        // - vendor-yjs: CRDT library (layout store, loaded on first graph)
+        const lazyVendors = [
+          'vendor-three',
+          'vendor-xterm',
+          'vendor-tiptap',
+          'vendor-chart',
+          'vendor-yjs'
+        ]
+        return deps.filter(
+          (dep) => !lazyVendors.some((vendor) => dep.includes(vendor))
+        )
       }
-    }
-  },
-
-  esbuild: {
-    minifyIdentifiers: SHOULD_MINIFY,
-    keepNames: true,
-    minifySyntax: SHOULD_MINIFY,
-    minifyWhitespace: SHOULD_MINIFY,
-    pure: SHOULD_MINIFY
-      ? [
-          'console.log',
+    },
+    rolldownOptions: {
+      treeshake: {
+        manualPureFunctions: [
+          'console.clear',
+          'console.count',
+          'console.countReset',
           'console.debug',
-          'console.info',
-          'console.trace',
           'console.dir',
           'console.dirxml',
           'console.group',
           'console.groupCollapsed',
           'console.groupEnd',
+          'console.info',
+          'console.log',
+          'console.profile',
+          'console.profileEnd',
           'console.table',
           'console.time',
           'console.timeEnd',
           'console.timeLog',
-          'console.count',
-          'console.countReset',
-          'console.profile',
-          'console.profileEnd',
-          'console.clear'
+          'console.trace'
         ]
-      : []
-  },
+      },
+      output: {
+        keepNames: true,
+        codeSplitting: {
+          groups: [
+            // Framework core - highest priority, very stable
+            {
+              name: 'vendor-vue-core',
+              test: /[\\/]node_modules[\\/](vue|@vue|pinia|vue-router)[\\/]/,
+              priority: 20
+            },
 
-  test: {
-    globals: true,
-    environment: 'happy-dom',
-    setupFiles: ['./vitest.setup.ts']
+            {
+              name: 'vendor-firebase',
+              test: /[\\/]node_modules[\\/](@?firebase|@firebase)[\\/]/,
+              priority: 15
+            },
+            {
+              name: 'vendor-sentry',
+              test: /[\\/]node_modules[\\/]@sentry[\\/]/,
+              priority: 15
+            },
+
+            // UI component libraries
+            {
+              name: 'vendor-primevue',
+              test: /[\\/]node_modules[\\/](@?primevue|@primeuix)[\\/]/,
+              priority: 15
+            },
+            {
+              name: 'vendor-reka-ui',
+              test: /[\\/]node_modules[\\/]reka-ui[\\/]/,
+              priority: 15
+            },
+
+            // Heavy optional features
+            {
+              name: 'vendor-three',
+              test: /[\\/]node_modules[\\/](three|@sparkjsdev)[\\/]/,
+              priority: 15
+            },
+            {
+              name: 'vendor-tiptap',
+              test: /[\\/]node_modules[\\/]@tiptap[\\/]/,
+              priority: 15
+            },
+            {
+              name: 'vendor-chart',
+              test: /[\\/]node_modules[\\/]chart\.js[\\/]/,
+              priority: 15
+            },
+            {
+              name: 'vendor-xterm',
+              test: /[\\/]node_modules[\\/]@xterm[\\/]/,
+              priority: 15
+            },
+            {
+              name: 'vendor-yjs',
+              test: /[\\/]node_modules[\\/](yjs|lib0)[\\/]/,
+              priority: 15
+            },
+
+            // Utilities and validation
+            {
+              name: 'vendor-vueuse',
+              test: /[\\/]node_modules[\\/]@vueuse[\\/]/,
+              priority: 12
+            },
+            {
+              name: 'vendor-i18n',
+              test: /[\\/]node_modules[\\/](vue-i18n|@intlify)[\\/]/,
+              priority: 12
+            },
+            {
+              name: 'vendor-zod',
+              test: /[\\/]node_modules[\\/](zod|zod-validation-error)[\\/]/,
+              priority: 12
+            },
+            {
+              name: 'vendor-axios',
+              test: /[\\/]node_modules[\\/]axios[\\/]/,
+              priority: 12
+            },
+            {
+              name: 'vendor-markdown',
+              test: /[\\/]node_modules[\\/](marked|dompurify)[\\/]/,
+              priority: 12
+            },
+
+            // Catch-all for remaining node_modules
+            {
+              name: 'vendor-other',
+              test: /[\\/]node_modules[\\/]/,
+              priority: 0,
+              minSize: 10000
+            }
+          ]
+        }
+      }
+    }
   },
 
   define: {
     __COMFYUI_FRONTEND_VERSION__: JSON.stringify(
       process.env.npm_package_version
     ),
+    __COMFYUI_FRONTEND_COMMIT__: JSON.stringify(GIT_COMMIT),
     __SENTRY_ENABLED__: JSON.stringify(
       !(process.env.NODE_ENV === 'development' || !process.env.SENTRY_DSN)
     ),
@@ -499,7 +625,8 @@ export default defineConfig({
     __ALGOLIA_APP_ID__: JSON.stringify(process.env.ALGOLIA_APP_ID || ''),
     __ALGOLIA_API_KEY__: JSON.stringify(process.env.ALGOLIA_API_KEY || ''),
     __USE_PROD_CONFIG__: process.env.USE_PROD_CONFIG === 'true',
-    __DISTRIBUTION__: JSON.stringify(DISTRIBUTION)
+    __DISTRIBUTION__: JSON.stringify(DISTRIBUTION),
+    __IS_NIGHTLY__: JSON.stringify(IS_NIGHTLY)
   },
 
   resolve: {
@@ -513,6 +640,42 @@ export default defineConfig({
 
   optimizeDeps: {
     exclude: ['@comfyorg/comfyui-electron-types'],
+    include: ['primevue/datatable', 'primevue/column'],
     entries: ['index.html']
+  },
+
+  test: {
+    globals: true,
+    environment: 'happy-dom',
+    setupFiles: ['./vitest.setup.ts'],
+    retry: process.env.CI ? 2 : 0,
+    include: [
+      'src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
+      'packages/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
+      'scripts/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'
+    ],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html', 'lcov'],
+      include: ['src/**/*.{ts,vue}'],
+      exclude: [
+        'src/**/*.test.ts',
+        'src/**/*.spec.ts',
+        'src/**/*.stories.ts',
+        'src/**/*.d.ts',
+        'src/locales/**',
+        'src/lib/litegraph/**',
+        'src/assets/**'
+      ]
+    },
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/cypress/**',
+      '**/.{idea,git,cache,output,temp}/**',
+      '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint}.config.*',
+      '**/.{oxlintrc,oxfmtrc}.json'
+    ],
+    silent: 'passed-only'
   }
-}) satisfies UserConfig as UserConfig
+})

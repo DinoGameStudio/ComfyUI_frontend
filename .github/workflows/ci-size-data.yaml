@@ -1,4 +1,4 @@
-name: "CI: Size Data"
+name: 'CI: Size Data'
 
 on:
   push:
@@ -8,30 +8,36 @@ on:
     branches:
       - main
 
+concurrency:
+  group: size-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
-  collect:
+  changes:
     if: github.repository == 'Comfy-Org/ComfyUI_frontend'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      should-run: ${{ steps.changes.outputs.should-run }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: changes
+        uses: ./.github/actions/changes-filter
+
+  collect:
+    needs: changes
+    if: ${{ needs.changes.outputs.should-run == 'true' }}
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4.1.0
-        with:
-          version: 10
-
-      - name: Install Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: '24.x'
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install
+      - name: Setup frontend
+        uses: ./.github/actions/setup-frontend
 
       - name: Build project
         run: pnpm build
@@ -39,14 +45,8 @@ jobs:
       - name: Collect size data
         run: node scripts/size-collect.js
 
-      - name: Save PR number & base branch
-        if: ${{ github.event_name == 'pull_request' }}
-        run: |
-          echo ${{ github.event.number }} > ./temp/size/number.txt
-          echo ${{ github.base_ref }} > ./temp/size/base.txt
-
       - name: Upload size data
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: size-data
           path: temp/size

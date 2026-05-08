@@ -119,6 +119,12 @@ class LayoutStoreImpl implements LayoutStore {
 
   // Change listeners
   private changeListeners = new Set<(change: LayoutChange) => void>()
+  private nodeChangeListeners = new Map<
+    NodeId,
+    Set<(change: LayoutChange) => void>
+  >()
+  private pendingGlobalChanges: LayoutChange[] = []
+  private isGlobalDispatchQueued = false
 
   // CustomRef cache and trigger functions
   private nodeRefs = new Map<NodeId, Ref<NodeLayout | null>>()
@@ -140,6 +146,24 @@ class LayoutStoreImpl implements LayoutStore {
   public isDraggingVueNodes = ref(false)
   // Vue resizing state to prevent drag from activating during resize
   public isResizingVueNodes = ref(false)
+
+  /**
+   * Flag indicating slot positions are pending sync after graph reconfiguration.
+   * When true, link rendering should be skipped to avoid drawing with stale positions.
+   */
+  private _pendingSlotSync = false
+
+  get pendingSlotSync(): boolean {
+    return this._pendingSlotSync
+  }
+
+  get hasSlotLayouts(): boolean {
+    return this.slotLayouts.size > 0
+  }
+
+  setPendingSlotSync(value: boolean): void {
+    this._pendingSlotSync = value
+  }
 
   constructor() {
     // Initialize Yjs data structures
@@ -494,23 +518,6 @@ class LayoutStoreImpl implements LayoutStore {
   deleteSlotLayout(key: string): void {
     const deleted = this.slotLayouts.delete(key)
     if (deleted) {
-      // Remove from spatial index
-      this.slotSpatialIndex.remove(key)
-    }
-  }
-
-  /**
-   * Delete all slot layouts for a node
-   */
-  deleteNodeSlotLayouts(nodeId: NodeId): void {
-    const keysToDelete: string[] = []
-    for (const [key, layout] of this.slotLayouts) {
-      if (layout.nodeId === nodeId) {
-        keysToDelete.push(key)
-      }
-    }
-    for (const key of keysToDelete) {
-      this.slotLayouts.delete(key)
       // Remove from spatial index
       this.slotSpatialIndex.remove(key)
     }
@@ -916,8 +923,10 @@ class LayoutStoreImpl implements LayoutStore {
       }
     })
 
-    // Notify listeners (after transaction completes)
-    setTimeout(() => this.notifyChange(change), 0)
+    // Keep node-scoped listeners synchronous for immediate local feedback,
+    // but queue global listener fan-out to avoid blocking hot paths.
+    this.notifyNodeChange(change)
+    this.queueGlobalChange(change)
   }
 
   /**
@@ -926,6 +935,25 @@ class LayoutStoreImpl implements LayoutStore {
   onChange(callback: (change: LayoutChange) => void): () => void {
     this.changeListeners.add(callback)
     return () => this.changeListeners.delete(callback)
+  }
+
+  onNodeChange(
+    nodeId: NodeId,
+    callback: (change: LayoutChange) => void
+  ): () => void {
+    const listenersForNode = this.nodeChangeListeners.get(nodeId) ?? new Set()
+    listenersForNode.add(callback)
+    this.nodeChangeListeners.set(nodeId, listenersForNode)
+
+    return () => {
+      const existingListeners = this.nodeChangeListeners.get(nodeId)
+      if (!existingListeners) return
+
+      existingListeners.delete(callback)
+      if (existingListeners.size === 0) {
+        this.nodeChangeListeners.delete(nodeId)
+      }
+    }
   }
 
   /**
@@ -977,6 +1005,7 @@ class LayoutStoreImpl implements LayoutStore {
       // Vue components may already hold references to these refs, and clearing
       // them would break the reactivity chain. The refs will be reused when
       // nodes are recreated, and stale refs will be cleaned up over time.
+      this.nodeChangeListeners.clear()
       this.spatialIndex.clear()
       this.linkSegmentSpatialIndex.clear()
       this.slotSpatialIndex.clear()
@@ -985,6 +1014,8 @@ class LayoutStoreImpl implements LayoutStore {
       this.linkSegmentLayouts.clear()
       this.slotLayouts.clear()
       this.rerouteLayouts.clear()
+      this.pendingGlobalChanges = []
+      this.isGlobalDispatchQueued = false
 
       nodes.forEach((node, index) => {
         const layout: NodeLayout = {
@@ -1103,13 +1134,10 @@ class LayoutStoreImpl implements LayoutStore {
     // During undo/redo, Vue components may still hold references to the old ref.
     // If we delete the trigger, Vue won't be notified when the node is re-created.
     // The trigger will be called in finalizeOperation to notify Vue of the change.
-
+    // We also intentionally do NOT delete slot layouts here for the same reason,
+    // and cleanup is handled by onUnmounted in useSlotElementTracking.
     // Remove from spatial index
     this.spatialIndex.remove(operation.nodeId)
-
-    // Clean up associated slot layouts
-    this.deleteNodeSlotLayouts(operation.nodeId)
-
     // Clean up associated links
     const linksToDelete = this.findLinksConnectedToNode(operation.nodeId)
 
@@ -1376,6 +1404,30 @@ class LayoutStoreImpl implements LayoutStore {
 
   // Helper methods
 
+  private queueGlobalChange(change: LayoutChange): void {
+    if (this.changeListeners.size === 0) return
+
+    this.pendingGlobalChanges.push(change)
+    if (this.isGlobalDispatchQueued) return
+
+    this.isGlobalDispatchQueued = true
+    queueMicrotask(() => {
+      this.flushQueuedGlobalChanges()
+    })
+  }
+
+  private flushQueuedGlobalChanges(): void {
+    this.isGlobalDispatchQueued = false
+    if (this.pendingGlobalChanges.length === 0) return
+
+    const queuedChanges = this.pendingGlobalChanges
+    this.pendingGlobalChanges = []
+
+    queuedChanges.forEach((queuedChange) => {
+      this.notifyChange(queuedChange)
+    })
+  }
+
   private notifyChange(change: LayoutChange): void {
     this.changeListeners.forEach((listener) => {
       try {
@@ -1384,6 +1436,21 @@ class LayoutStoreImpl implements LayoutStore {
         console.error('Error in layout change listener:', error)
       }
     })
+  }
+
+  private notifyNodeChange(change: LayoutChange): void {
+    for (const nodeId of new Set(change.nodeIds)) {
+      const listeners = this.nodeChangeListeners.get(nodeId)
+      if (!listeners) continue
+
+      listeners.forEach((listener) => {
+        try {
+          listener(change)
+        } catch (error) {
+          console.error('Error in node-scoped layout change listener:', error)
+        }
+      })
+    }
   }
 
   // CRDT-specific methods

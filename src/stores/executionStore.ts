@@ -1,8 +1,7 @@
 import { defineStore } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 
 import { useNodeProgressText } from '@/composables/node/useNodeProgressText'
-import type { LGraph, Subgraph } from '@/lib/litegraph/src/litegraph'
 import { isCloud } from '@/platform/distribution/types'
 import { useTelemetry } from '@/platform/telemetry'
 import type { ComfyWorkflow } from '@/platform/workflow/management/stores/workflowStore'
@@ -10,7 +9,8 @@ import { useWorkflowStore } from '@/platform/workflow/management/stores/workflow
 import type {
   ComfyNode,
   ComfyWorkflowJSON,
-  NodeId
+  NodeId,
+  WorkflowId
 } from '@/platform/workflow/validation/schemas/workflowSchema'
 import { useCanvasStore } from '@/renderer/core/canvas/canvasStore'
 import type {
@@ -20,7 +20,7 @@ import type {
   ExecutionInterruptedWsMessage,
   ExecutionStartWsMessage,
   ExecutionSuccessWsMessage,
-  NodeError,
+  JobId,
   NodeProgressState,
   NotificationWsMessage,
   ProgressStateWsMessage,
@@ -29,12 +29,14 @@ import type {
 } from '@/schemas/apiSchema'
 import { api } from '@/scripts/api'
 import { app } from '@/scripts/app'
-import { useNodeOutputStore } from '@/stores/imagePreviewStore'
+import { useNodeOutputStore } from '@/stores/nodeOutputStore'
+import { useJobPreviewStore } from '@/stores/jobPreviewStore'
+import { useExecutionErrorStore } from '@/stores/executionErrorStore'
 import type { NodeLocatorId } from '@/types/nodeIdentification'
-import { createNodeLocatorId } from '@/types/nodeIdentification'
-import { forEachNode, getNodeByExecutionId } from '@/utils/graphTraversalUtil'
+import { classifyCloudValidationError } from '@/utils/executionErrorUtil'
+import { executionIdToNodeLocatorId } from '@/utils/graphTraversalUtil'
 
-interface QueuedPrompt {
+interface QueuedJob {
   /**
    * The nodes that are queued to be executed. The key is the node id and the
    * value is a boolean indicating if the node has been executed.
@@ -46,84 +48,57 @@ interface QueuedPrompt {
   workflow?: ComfyWorkflow
 }
 
-const subgraphNodeIdToSubgraph = (id: string, graph: LGraph | Subgraph) => {
-  const node = graph.getNodeById(id)
-  if (node?.isSubgraphNode()) return node.subgraph
-}
-
 /**
- * Recursively get the subgraph objects for the given subgraph instance IDs
- * @param currentGraph The current graph
- * @param subgraphNodeIds The instance IDs
- * @param subgraphs The subgraphs
- * @returns The subgraphs that correspond to each of the instance IDs.
+ * Maximum number of job entries retained in {@link nodeProgressStatesByJob}.
+ * When exceeded, the oldest entries (by insertion order) are evicted to
+ * prevent unbounded memory growth in long-running sessions.
  */
-function getSubgraphsFromInstanceIds(
-  currentGraph: LGraph | Subgraph,
-  subgraphNodeIds: string[],
-  subgraphs: Subgraph[] = []
-): Subgraph[] | undefined {
-  // Last segment is the node portion; nothing to do.
-  if (subgraphNodeIds.length === 1) return subgraphs
-
-  const currentPart = subgraphNodeIds.shift()
-  if (currentPart === undefined) return subgraphs
-
-  const subgraph = subgraphNodeIdToSubgraph(currentPart, currentGraph)
-  if (!subgraph) {
-    console.warn(`Subgraph not found: ${currentPart}`)
-    return undefined
-  }
-
-  subgraphs.push(subgraph)
-  return getSubgraphsFromInstanceIds(subgraph, subgraphNodeIds, subgraphs)
-}
-
-/**
- * Convert execution context node IDs to NodeLocatorIds
- * @param nodeId The node ID from execution context (could be execution ID)
- * @returns The NodeLocatorId
- */
-function executionIdToNodeLocatorId(
-  nodeId: string | number
-): NodeLocatorId | undefined {
-  const nodeIdStr = String(nodeId)
-
-  if (!nodeIdStr.includes(':')) {
-    // It's a top-level node ID
-    return nodeIdStr
-  }
-
-  // It's an execution node ID
-  const parts = nodeIdStr.split(':')
-  const localNodeId = parts[parts.length - 1]
-  const subgraphs = getSubgraphsFromInstanceIds(app.rootGraph, parts)
-  if (!subgraphs) return undefined
-  const nodeLocatorId = createNodeLocatorId(subgraphs.at(-1)!.id, localNodeId)
-  return nodeLocatorId
-}
+export const MAX_PROGRESS_JOBS = 1000
 
 export const useExecutionStore = defineStore('execution', () => {
   const workflowStore = useWorkflowStore()
   const canvasStore = useCanvasStore()
+  const executionErrorStore = useExecutionErrorStore()
 
   const clientId = ref<string | null>(null)
-  const activePromptId = ref<string | null>(null)
-  const queuedPrompts = ref<Record<NodeId, QueuedPrompt>>({})
-  const lastNodeErrors = ref<Record<NodeId, NodeError> | null>(null)
-  const lastExecutionError = ref<ExecutionErrorWsMessage | null>(null)
+  const activeJobId = ref<JobId | null>(null)
+  const queuedJobs = ref<Record<NodeId, QueuedJob>>({})
   // This is the progress of all nodes in the currently executing workflow
   const nodeProgressStates = ref<Record<string, NodeProgressState>>({})
-  const nodeProgressStatesByPrompt = ref<
-    Record<string, Record<string, NodeProgressState>>
+  const nodeProgressStatesByJob = ref<
+    Record<JobId, Record<string, NodeProgressState>>
   >({})
 
   /**
-   * Map of prompt_id to workflow ID for quick lookup across the app.
+   * Map of job ID to workflow ID for quick lookup across the app.
    */
-  const promptIdToWorkflowId = ref<Map<string, string>>(new Map())
+  const jobIdToWorkflowId = ref<Map<JobId, WorkflowId>>(new Map())
 
-  const initializingPromptIds = ref<Set<string>>(new Set())
+  /**
+   * Map of job ID to workflow file path in the current session.
+   * Only populated for jobs that are queued in this browser tab.
+   */
+  const jobIdToSessionWorkflowPath = shallowRef<Map<JobId, string>>(new Map())
+
+  const initializingJobIds = ref<Set<JobId>>(new Set())
+
+  /**
+   * Cache for executionIdToNodeLocatorId lookups.
+   * Avoids redundant graph traversals during a single execution run.
+   * Cleared at execution start and end to ensure fresh graph state.
+   */
+  const executionIdToLocatorCache = new Map<string, NodeLocatorId | undefined>()
+
+  function cachedExecutionIdToLocator(
+    executionId: string
+  ): NodeLocatorId | undefined {
+    if (executionIdToLocatorCache.has(executionId)) {
+      return executionIdToLocatorCache.get(executionId)
+    }
+    const locatorId = executionIdToNodeLocatorId(app.rootGraph, executionId)
+    executionIdToLocatorCache.set(executionId, locatorId)
+    return locatorId
+  }
 
   const mergeExecutionProgressStates = (
     currentState: NodeProgressState | undefined,
@@ -164,7 +139,7 @@ export const useExecutionStore = defineStore('execution', () => {
       const parts = String(state.display_node_id).split(':')
       for (let i = 0; i < parts.length; i++) {
         const executionId = parts.slice(0, i + 1).join(':')
-        const locatorId = executionIdToNodeLocatorId(executionId)
+        const locatorId = cachedExecutionIdToLocator(executionId)
         if (!locatorId) continue
 
         result[locatorId] = mergeExecutionProgressStates(
@@ -197,7 +172,7 @@ export const useExecutionStore = defineStore('execution', () => {
   const executingNode = computed<ComfyNode | null>(() => {
     if (!executingNodeId.value) return null
 
-    const workflow: ComfyWorkflow | undefined = activePrompt.value?.workflow
+    const workflow: ComfyWorkflow | undefined = activeJob.value?.workflow
     if (!workflow) return null
 
     const canvasState: ComfyWorkflowJSON | null =
@@ -218,40 +193,27 @@ export const useExecutionStore = defineStore('execution', () => {
       : null
   )
 
-  const activePrompt = computed<QueuedPrompt | undefined>(
-    () => queuedPrompts.value[activePromptId.value ?? '']
+  const activeJob = computed<QueuedJob | undefined>(
+    () => queuedJobs.value[activeJobId.value ?? '']
   )
 
   const totalNodesToExecute = computed<number>(() => {
-    if (!activePrompt.value) return 0
-    return Object.values(activePrompt.value.nodes).length
+    if (!activeJob.value) return 0
+    return Object.values(activeJob.value.nodes).length
   })
 
-  const isIdle = computed<boolean>(() => !activePromptId.value)
+  const isIdle = computed<boolean>(() => !activeJobId.value)
 
   const nodesExecuted = computed<number>(() => {
-    if (!activePrompt.value) return 0
-    return Object.values(activePrompt.value.nodes).filter(Boolean).length
+    if (!activeJob.value) return 0
+    return Object.values(activeJob.value.nodes).filter(Boolean).length
   })
 
   const executionProgress = computed<number>(() => {
-    if (!activePrompt.value) return 0
+    if (!activeJob.value) return 0
     const total = totalNodesToExecute.value
     const done = nodesExecuted.value
     return total > 0 ? done / total : 0
-  })
-
-  const lastExecutionErrorNodeLocatorId = computed(() => {
-    const err = lastExecutionError.value
-    if (!err) return null
-    return executionIdToNodeLocatorId(String(err.node_id))
-  })
-
-  const lastExecutionErrorNodeId = computed(() => {
-    const locator = lastExecutionErrorNodeLocatorId.value
-    if (!locator) return null
-    const localId = workflowStore.nodeLocatorIdToNodeId(locator)
-    return localId != null ? String(localId) : null
   })
 
   function bindExecutionEvents() {
@@ -285,66 +247,101 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function handleExecutionStart(e: CustomEvent<ExecutionStartWsMessage>) {
-    lastExecutionError.value = null
-    activePromptId.value = e.detail.prompt_id
-    queuedPrompts.value[activePromptId.value] ??= { nodes: {} }
-    clearInitializationByPromptId(activePromptId.value)
+    executionIdToLocatorCache.clear()
+    executionErrorStore.clearAllErrors()
+    activeJobId.value = e.detail.prompt_id
+    queuedJobs.value[activeJobId.value] ??= { nodes: {} }
+    clearInitializationByJobId(activeJobId.value)
+
+    // Ensure path mapping exists — execution_start can arrive via WebSocket
+    // before the HTTP response from queuePrompt triggers storeJob.
+    if (!jobIdToSessionWorkflowPath.value.has(activeJobId.value)) {
+      const path = queuedJobs.value[activeJobId.value]?.workflow?.path
+      if (path) ensureSessionWorkflowPath(activeJobId.value, path)
+    }
   }
 
   function handleExecutionCached(e: CustomEvent<ExecutionCachedWsMessage>) {
-    if (!activePrompt.value) return
+    if (!activeJob.value) return
     for (const n of e.detail.nodes) {
-      activePrompt.value.nodes[n] = true
+      activeJob.value.nodes[n] = true
     }
   }
 
   function handleExecutionInterrupted(
     e: CustomEvent<ExecutionInterruptedWsMessage>
   ) {
-    const pid = e.detail.prompt_id
-    if (activePromptId.value)
-      clearInitializationByPromptId(activePromptId.value)
-    resetExecutionState(pid)
+    const jobId = e.detail.prompt_id
+    if (activeJobId.value) clearInitializationByJobId(activeJobId.value)
+    resetExecutionState(jobId)
   }
 
   function handleExecuted(e: CustomEvent<ExecutedWsMessage>) {
-    if (!activePrompt.value) return
-    activePrompt.value.nodes[e.detail.node] = true
+    if (!activeJob.value) return
+    activeJob.value.nodes[e.detail.node] = true
   }
 
   function handleExecutionSuccess(e: CustomEvent<ExecutionSuccessWsMessage>) {
-    if (isCloud && activePromptId.value) {
+    if (isCloud && activeJobId.value) {
       useTelemetry()?.trackExecutionSuccess({
-        jobId: activePromptId.value
+        jobId: activeJobId.value
       })
     }
-    const pid = e.detail.prompt_id
-    resetExecutionState(pid)
+    const jobId = e.detail.prompt_id
+    resetExecutionState(jobId)
   }
 
   function handleExecuting(e: CustomEvent<NodeId | null>): void {
     // Clear the current node progress when a new node starts executing
     _executingNodeProgress.value = null
 
-    if (!activePrompt.value) return
+    if (!activeJob.value) return
 
     // Update the executing nodes list
     if (typeof e.detail !== 'string') {
-      if (activePromptId.value) {
-        delete queuedPrompts.value[activePromptId.value]
+      if (activeJobId.value) {
+        delete queuedJobs.value[activeJobId.value]
       }
-      activePromptId.value = null
+      activeJobId.value = null
     }
   }
 
+  /**
+   * Evicts the oldest entries from {@link nodeProgressStatesByJob} when the
+   * map exceeds {@link MAX_PROGRESS_JOBS}, preventing unbounded memory
+   * growth in long-running sessions.
+   *
+   * Relies on ES2015+ object key insertion order: the first keys returned
+   * by `Object.keys` are the oldest entries.
+   *
+   * @example
+   * ```ts
+   * // Given 105 entries, evicts the 5 oldest:
+   * evictOldProgressJobs()
+   * Object.keys(nodeProgressStatesByJob.value).length // => 100
+   * ```
+   */
+  function evictOldProgressJobs() {
+    const current = nodeProgressStatesByJob.value
+    const keys = Object.keys(current)
+    if (keys.length <= MAX_PROGRESS_JOBS) return
+
+    const pruned: Record<string, Record<string, NodeProgressState>> = {}
+    const keysToKeep = keys.slice(keys.length - MAX_PROGRESS_JOBS)
+    for (const key of keysToKeep) {
+      pruned[key] = current[key]
+    }
+    nodeProgressStatesByJob.value = pruned
+  }
+
   function handleProgressState(e: CustomEvent<ProgressStateWsMessage>) {
-    const { nodes, prompt_id: pid } = e.detail
+    const { nodes, prompt_id: jobId } = e.detail
 
     // Revoke previews for nodes that are starting to execute
-    const previousForPrompt = nodeProgressStatesByPrompt.value[pid] || {}
+    const previousForJob = nodeProgressStatesByJob.value[jobId] || {}
     for (const nodeId in nodes) {
       const nodeState = nodes[nodeId]
-      if (nodeState.state === 'running' && !previousForPrompt[nodeId]) {
+      if (nodeState.state === 'running' && !previousForJob[nodeId]) {
         // This node just started executing, revoke its previews
         // Note that we're doing the *actual* node id instead of the display node id
         // here intentionally. That way, we don't clear the preview every time a new node
@@ -355,10 +352,11 @@ export const useExecutionStore = defineStore('execution', () => {
     }
 
     // Update the progress states for all nodes
-    nodeProgressStatesByPrompt.value = {
-      ...nodeProgressStatesByPrompt.value,
-      [pid]: nodes
+    nodeProgressStatesByJob.value = {
+      ...nodeProgressStatesByJob.value,
+      [jobId]: nodes
     }
+    evictOldProgressJobs()
     nodeProgressStates.value = nodes
 
     // If we have progress for the currently executing node, update it for backwards compatibility
@@ -387,7 +385,6 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function handleExecutionError(e: CustomEvent<ExecutionErrorWsMessage>) {
-    lastExecutionError.value = e.detail
     if (isCloud) {
       useTelemetry()?.trackExecutionError({
         jobId: e.detail.prompt_id,
@@ -395,16 +392,58 @@ export const useExecutionStore = defineStore('execution', () => {
         nodeType: e.detail.node_type,
         error: e.detail.exception_message
       })
+
+      // Cloud wraps validation errors (400) in exception_message as embedded JSON.
+      if (handleCloudValidationError(e.detail)) return
     }
-    const pid = e.detail?.prompt_id
-    // Clear initialization for errored prompt if present
-    if (e.detail?.prompt_id) clearInitializationByPromptId(e.detail.prompt_id)
-    resetExecutionState(pid)
+
+    // Service-level errors (e.g. "Job has stagnated") have no associated node.
+    // Route them as job errors
+    if (handleServiceLevelError(e.detail)) return
+
+    // OSS path / Cloud fallback (real runtime errors)
+    executionErrorStore.lastExecutionError = e.detail
+    clearInitializationByJobId(e.detail.prompt_id)
+    resetExecutionState(e.detail.prompt_id)
+  }
+
+  function handleServiceLevelError(detail: ExecutionErrorWsMessage): boolean {
+    const nodeId = detail.node_id
+    if (nodeId !== null && nodeId !== undefined && String(nodeId) !== '')
+      return false
+
+    clearInitializationByJobId(detail.prompt_id)
+    resetExecutionState(detail.prompt_id)
+    executionErrorStore.lastPromptError = {
+      type: detail.exception_type ?? 'error',
+      message: detail.exception_type
+        ? `${detail.exception_type}: ${detail.exception_message}`
+        : (detail.exception_message ?? ''),
+      details: detail.traceback?.join('\n') ?? ''
+    }
+    return true
+  }
+
+  function handleCloudValidationError(
+    detail: ExecutionErrorWsMessage
+  ): boolean {
+    const result = classifyCloudValidationError(detail.exception_message)
+    if (!result) return false
+
+    clearInitializationByJobId(detail.prompt_id)
+    resetExecutionState(detail.prompt_id)
+
+    if (result.kind === 'nodeErrors') {
+      executionErrorStore.lastNodeErrors = result.nodeErrors
+    } else {
+      executionErrorStore.lastPromptError = result.promptError
+    }
+    return true
   }
 
   /**
    * Notification handler used for frontend/cloud initialization tracking.
-   * Marks a prompt as initializing when cloud notifies it is waiting for a machine.
+   * Marks a job as initializing when cloud notifies it is waiting for a machine.
    */
   function handleNotification(e: CustomEvent<NotificationWsMessage>) {
     const payload = e.detail
@@ -413,43 +452,63 @@ export const useExecutionStore = defineStore('execution', () => {
     if (!id) return
     // Until cloud implements a proper message
     if (text.includes('Waiting for a machine')) {
-      const next = new Set(initializingPromptIds.value)
+      const next = new Set(initializingJobIds.value)
       next.add(id)
-      initializingPromptIds.value = next
+      initializingJobIds.value = next
     }
   }
 
-  function clearInitializationByPromptId(promptId: string | null) {
-    if (!promptId) return
-    if (!initializingPromptIds.value.has(promptId)) return
-    const next = new Set(initializingPromptIds.value)
-    next.delete(promptId)
-    initializingPromptIds.value = next
+  function clearInitializationByJobId(jobId: JobId | null) {
+    if (!jobId) return
+    if (!initializingJobIds.value.has(jobId)) return
+    const next = new Set(initializingJobIds.value)
+    next.delete(jobId)
+    initializingJobIds.value = next
   }
 
-  function isPromptInitializing(
-    promptId: string | number | undefined
-  ): boolean {
-    if (!promptId) return false
-    return initializingPromptIds.value.has(String(promptId))
+  function clearInitializationByJobIds(jobIds: JobId[]) {
+    if (!jobIds.length) return
+    const current = initializingJobIds.value
+    const toRemove = jobIds.filter((id) => current.has(id))
+    if (!toRemove.length) return
+    const next = new Set(current)
+    for (const id of toRemove) {
+      next.delete(id)
+    }
+    initializingJobIds.value = next
+  }
+
+  function reconcileInitializingJobs(activeJobIds: Set<JobId>) {
+    const orphaned = [...initializingJobIds.value].filter(
+      (id) => !activeJobIds.has(id)
+    )
+    clearInitializationByJobIds(orphaned)
+  }
+
+  function isJobInitializing(jobId: JobId | number | undefined): boolean {
+    if (!jobId) return false
+    return initializingJobIds.value.has(String(jobId))
   }
 
   /**
    * Reset execution-related state after a run completes or is stopped.
    */
-  function resetExecutionState(pid?: string | null) {
+  function resetExecutionState(jobIdParam?: JobId | null) {
+    executionIdToLocatorCache.clear()
     nodeProgressStates.value = {}
-    const promptId = pid ?? activePromptId.value ?? null
-    if (promptId) {
-      const map = { ...nodeProgressStatesByPrompt.value }
-      delete map[promptId]
-      nodeProgressStatesByPrompt.value = map
+    const jobId = jobIdParam ?? activeJobId.value ?? null
+    if (jobId) {
+      const map = { ...nodeProgressStatesByJob.value }
+      delete map[jobId]
+      nodeProgressStatesByJob.value = map
+      useJobPreviewStore().clearPreview(jobId)
     }
-    if (activePromptId.value) {
-      delete queuedPrompts.value[activePromptId.value]
+    if (activeJobId.value) {
+      delete queuedJobs.value[activeJobId.value]
     }
-    activePromptId.value = null
+    activeJobId.value = null
     _executingNodeProgress.value = null
+    executionErrorStore.clearPromptError()
   }
 
   function getNodeIdIfExecuting(nodeId: string | number) {
@@ -460,51 +519,71 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function handleProgressText(e: CustomEvent<ProgressTextWsMessage>) {
-    const { nodeId, text } = e.detail
+    const { nodeId, text, prompt_id } = e.detail
     if (!text || !nodeId) return
+
+    // Filter: only accept progress for the active prompt
+    if (prompt_id && activeJobId.value && prompt_id !== activeJobId.value)
+      return
 
     // Handle execution node IDs for subgraphs
     const currentId = getNodeIdIfExecuting(nodeId)
-    const node = canvasStore.getCanvas().graph?.getNodeById(currentId)
+    if (!currentId) return
+    const node = canvasStore.canvas?.graph?.getNodeById(currentId)
     if (!node) return
 
     useNodeProgressText().showTextPreview(node, text)
   }
 
-  function storePrompt({
+  function storeJob({
     nodes,
     id,
     workflow
   }: {
     nodes: string[]
-    id: string
+    id: JobId
     workflow: ComfyWorkflow
   }) {
-    queuedPrompts.value[id] ??= { nodes: {} }
-    const queuedPrompt = queuedPrompts.value[id]
-    queuedPrompt.nodes = {
+    queuedJobs.value[id] ??= { nodes: {} }
+    const queuedJob = queuedJobs.value[id]
+    queuedJob.nodes = {
       ...nodes.reduce((p: Record<string, boolean>, n) => {
         p[n] = false
         return p
       }, {}),
-      ...queuedPrompt.nodes
+      ...queuedJob.nodes
     }
-    queuedPrompt.workflow = workflow
+    queuedJob.workflow = workflow
     const wid = workflow?.activeState?.id ?? workflow?.initialState?.id
     if (wid) {
-      promptIdToWorkflowId.value.set(String(id), String(wid))
+      jobIdToWorkflowId.value.set(id, wid)
+    }
+    if (workflow?.path) {
+      ensureSessionWorkflowPath(id, workflow.path)
     }
   }
 
+  // ~0.65 MB at capacity (32 char GUID key + 50 char path value)
+  const MAX_SESSION_PATH_ENTRIES = 4000
+
+  function ensureSessionWorkflowPath(jobId: JobId, path: string) {
+    if (jobIdToSessionWorkflowPath.value.get(jobId) === path) return
+    const next = new Map(jobIdToSessionWorkflowPath.value)
+    next.set(jobId, path)
+    while (next.size > MAX_SESSION_PATH_ENTRIES) {
+      const oldest = next.keys().next().value
+      if (oldest !== undefined) next.delete(oldest)
+      else break
+    }
+    jobIdToSessionWorkflowPath.value = next
+  }
+
   /**
-   * Register or update a mapping from prompt_id to workflow ID.
+   * Register or update a mapping from job ID to workflow ID.
    */
-  function registerPromptWorkflowIdMapping(
-    promptId: string,
-    workflowId: string
-  ) {
-    if (!promptId || !workflowId) return
-    promptIdToWorkflowId.value.set(String(promptId), String(workflowId))
+  function registerJobWorkflowIdMapping(jobId: JobId, workflowId: WorkflowId) {
+    if (!jobId || !workflowId) return
+    jobIdToWorkflowId.value.set(jobId, workflowId)
   }
 
   /**
@@ -519,11 +598,9 @@ export const useExecutionStore = defineStore('execution', () => {
     return executionId
   }
 
-  const runningPromptIds = computed<string[]>(() => {
-    const result: string[] = []
-    for (const [pid, nodes] of Object.entries(
-      nodeProgressStatesByPrompt.value
-    )) {
+  const runningJobIds = computed<JobId[]>(() => {
+    const result: JobId[] = []
+    for (const [pid, nodes] of Object.entries(nodeProgressStatesByJob.value)) {
       if (Object.values(nodes).some((n) => n.state === 'running')) {
         result.push(pid)
       }
@@ -532,114 +609,24 @@ export const useExecutionStore = defineStore('execution', () => {
   })
 
   const runningWorkflowCount = computed<number>(
-    () => runningPromptIds.value.length
+    () => runningJobIds.value.length
   )
 
-  /** Map of node errors indexed by locator ID. */
-  const nodeErrorsByLocatorId = computed<Record<NodeLocatorId, NodeError>>(
-    () => {
-      if (!lastNodeErrors.value) return {}
-
-      const map: Record<NodeLocatorId, NodeError> = {}
-
-      for (const [executionId, nodeError] of Object.entries(
-        lastNodeErrors.value
-      )) {
-        const locatorId = executionIdToNodeLocatorId(executionId)
-        if (locatorId) {
-          map[locatorId] = nodeError
-        }
-      }
-
-      return map
-    }
-  )
-
-  /** Get node errors by locator ID. */
-  const getNodeErrors = (
-    nodeLocatorId: NodeLocatorId
-  ): NodeError | undefined => {
-    return nodeErrorsByLocatorId.value[nodeLocatorId]
-  }
-
-  /** Check if a specific slot has validation errors. */
-  const slotHasError = (
-    nodeLocatorId: NodeLocatorId,
-    slotName: string
-  ): boolean => {
-    const nodeError = getNodeErrors(nodeLocatorId)
-    if (!nodeError) return false
-
-    return nodeError.errors.some((e) => e.extra_info?.input_name === slotName)
-  }
-
-  /**
-   * Update node and slot error flags when validation errors change.
-   * Propagates errors up subgraph chains.
-   */
-  watch(lastNodeErrors, () => {
-    if (!app.rootGraph) return
-
-    // Clear all error flags
-    forEachNode(app.rootGraph, (node) => {
-      node.has_errors = false
-      if (node.inputs) {
-        for (const slot of node.inputs) {
-          slot.hasErrors = false
-        }
-      }
-    })
-
-    if (!lastNodeErrors.value) return
-
-    // Set error flags on nodes and slots
-    for (const [executionId, nodeError] of Object.entries(
-      lastNodeErrors.value
-    )) {
-      const node = getNodeByExecutionId(app.rootGraph, executionId)
-      if (!node) continue
-
-      node.has_errors = true
-
-      // Mark input slots with errors
-      if (node.inputs) {
-        for (const error of nodeError.errors) {
-          const slotName = error.extra_info?.input_name
-          if (!slotName) continue
-
-          const slot = node.inputs.find((s) => s.name === slotName)
-          if (slot) {
-            slot.hasErrors = true
-          }
-        }
-      }
-
-      // Propagate errors to parent subgraph nodes
-      const parts = executionId.split(':')
-      for (let i = parts.length - 1; i > 0; i--) {
-        const parentExecutionId = parts.slice(0, i).join(':')
-        const parentNode = getNodeByExecutionId(
-          app.rootGraph,
-          parentExecutionId
-        )
-        if (parentNode) {
-          parentNode.has_errors = true
-        }
-      }
-    }
+  const isActiveWorkflowRunning = computed(() => {
+    if (!activeJobId.value) return false
+    const path = workflowStore.activeWorkflow?.path
+    if (!path) return false
+    return jobIdToSessionWorkflowPath.value.get(activeJobId.value) === path
   })
 
   return {
     isIdle,
     clientId,
-    activePromptId,
-    queuedPrompts,
-    lastNodeErrors,
-    lastExecutionError,
-    lastExecutionErrorNodeId,
+    activeJobId,
+    queuedJobs,
     executingNodeId,
     executingNodeIds,
-    activePrompt,
+    activeJob,
     totalNodesToExecute,
     nodesExecuted,
     executionProgress,
@@ -647,24 +634,26 @@ export const useExecutionStore = defineStore('execution', () => {
     executingNodeProgress,
     nodeProgressStates,
     nodeLocationProgressStates,
-    nodeProgressStatesByPrompt,
-    runningPromptIds,
+    nodeProgressStatesByJob,
+    runningJobIds,
     runningWorkflowCount,
-    initializingPromptIds,
-    isPromptInitializing,
+    initializingJobIds,
+    isActiveWorkflowRunning,
+    isJobInitializing,
+    clearInitializationByJobId,
+    clearInitializationByJobIds,
+    reconcileInitializingJobs,
     bindExecutionEvents,
     unbindExecutionEvents,
-    storePrompt,
-    registerPromptWorkflowIdMapping,
+    storeJob,
+    registerJobWorkflowIdMapping,
     uniqueExecutingNodeIdStrings,
     // Raw executing progress data for backward compatibility in ComfyApp.
     _executingNodeProgress,
     // NodeLocatorId conversion helpers
-    executionIdToNodeLocatorId,
     nodeLocatorIdToExecutionId,
-    promptIdToWorkflowId,
-    // Node error lookup helpers
-    getNodeErrors,
-    slotHasError
+    jobIdToWorkflowId,
+    jobIdToSessionWorkflowPath,
+    ensureSessionWorkflowPath
   }
 })

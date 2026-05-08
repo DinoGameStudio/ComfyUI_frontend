@@ -1,23 +1,25 @@
 <template>
   <BaseModalLayout
     :content-title="$t('templateWorkflows.title', 'Workflow Templates')"
-    class="workflow-template-selector-dialog"
+    size="md"
   >
+    <template #leftPanelHeaderTitle>
+      <i class="icon-[comfy--template]" />
+      <h2 class="text-neutral text-base">
+        {{ $t('sideToolbar.templates', 'Templates') }}
+      </h2>
+    </template>
     <template #leftPanel>
-      <LeftSidePanel v-model="selectedNavItem" :nav-items="navItems">
-        <template #header-icon>
-          <i class="icon-[comfy--template]" />
-        </template>
-        <template #header-title>
-          <span class="text-neutral text-base">{{
-            $t('sideToolbar.templates', 'Templates')
-          }}</span>
-        </template>
-      </LeftSidePanel>
+      <LeftSidePanel v-model="selectedNavItem" :nav-items="navItems" />
     </template>
 
     <template #header>
-      <SearchBox v-model="searchQuery" size="lg" class="max-w-[384px]" />
+      <SearchInput
+        v-model="searchQuery"
+        size="lg"
+        class="max-w-96 flex-1"
+        autofocus
+      />
     </template>
 
     <template #header-right-area>
@@ -38,7 +40,10 @@
 
     <template #contentFilter>
       <div class="relative flex flex-wrap justify-between gap-2 px-6 pb-4">
-        <div class="flex flex-wrap gap-2">
+        <div
+          :ref="primeVueOverlay.overlayScopeRef"
+          class="flex flex-wrap gap-2"
+        >
           <!-- Model Filter -->
           <MultiSelect
             v-model="selectedModelObjects"
@@ -46,6 +51,7 @@
             class="w-[250px]"
             :label="modelFilterLabel"
             :options="modelOptions"
+            :content-style="selectContentStyle"
             :show-search-box="true"
             :show-selected-count="true"
             :show-clear-button="true"
@@ -60,6 +66,7 @@
             v-model="selectedUseCaseObjects"
             :label="useCaseFilterLabel"
             :options="useCaseOptions"
+            :content-style="selectContentStyle"
             :show-search-box="true"
             :show-selected-count="true"
             :show-clear-button="true"
@@ -74,6 +81,7 @@
             v-model="selectedRunsOnObjects"
             :label="runsOnFilterLabel"
             :options="runsOnOptions"
+            :content-style="selectContentStyle"
             :show-search-box="true"
             :show-selected-count="true"
             :show-clear-button="true"
@@ -90,6 +98,7 @@
             v-model="sortBy"
             :label="$t('templateWorkflows.sorting', 'Sort by')"
             :options="sortOptions"
+            :content-style="selectContentStyle"
             class="w-62.5"
           >
             <template #icon>
@@ -114,7 +123,7 @@
         v-if="!isLoading && filteredTemplates.length === 0"
         class="flex h-64 flex-col items-center justify-center text-neutral-500"
       >
-        <i class="mb-4 icon-[lucide--search] h-12 w-12 opacity-50" />
+        <i class="mb-4 icon-[lucide--search] size-12 opacity-50" />
         <p class="mb-2 text-lg">
           {{ $t('templateWorkflows.noResults', 'No templates found') }}
         </p>
@@ -131,7 +140,7 @@
         <!-- Title -->
         <span
           v-if="isLoading"
-          class="inline-block h-8 w-48 animate-pulse rounded bg-dialog-surface"
+          class="inline-block h-8 w-48 animate-pulse rounded-sm bg-dialog-surface"
         ></span>
 
         <!-- Template Cards Grid -->
@@ -152,9 +161,7 @@
             <template #top>
               <CardTop ratio="landscape">
                 <template #default>
-                  <div
-                    class="h-full w-full animate-pulse bg-dialog-surface"
-                  ></div>
+                  <div class="size-full animate-pulse bg-dialog-surface"></div>
                 </template>
               </CardTop>
             </template>
@@ -162,10 +169,10 @@
               <CardBottom>
                 <div class="px-4 py-3">
                   <div
-                    class="mb-2 h-6 animate-pulse rounded bg-dialog-surface"
+                    class="mb-2 h-6 animate-pulse rounded-sm bg-dialog-surface"
                   ></div>
                   <div
-                    class="h-4 animate-pulse rounded bg-dialog-surface"
+                    class="h-4 animate-pulse rounded-sm bg-dialog-surface"
                   ></div>
                 </div>
               </CardBottom>
@@ -177,7 +184,7 @@
             v-for="template in isLoading ? [] : displayTemplates"
             :key="template.name"
             ref="cardRefs"
-            size="compact"
+            size="tall"
             variant="ghost"
             rounded="lg"
             :data-testid="`template-workflow-${template.name}`"
@@ -190,9 +197,7 @@
               <CardTop ratio="square">
                 <template #default>
                   <!-- Template Thumbnail -->
-                  <div
-                    class="relative h-full w-full overflow-hidden rounded-lg"
-                  >
+                  <div class="relative size-full overflow-hidden rounded-lg">
                     <template v-if="template.mediaType === 'audio'">
                       <AudioThumbnail :src="getBaseThumbnailSrc(template)" />
                     </template>
@@ -253,18 +258,24 @@
                         "
                       />
                     </template>
+                    <LogoOverlay
+                      v-if="template.logos?.length"
+                      :logos="template.logos"
+                      :get-logo-url="workflowTemplatesStore.getLogoUrl"
+                    />
                     <ProgressSpinner
                       v-if="loadingTemplate === template.name"
-                      class="absolute inset-0 z-10 m-auto h-12 w-12"
+                      class="absolute inset-0 z-10 m-auto size-12"
                     />
                   </div>
                 </template>
                 <template #bottom-right>
                   <template v-if="template.tags && template.tags.length > 0">
-                    <SquareChip
+                    <Tag
                       v-for="tag in template.tags"
                       :key="tag"
                       :label="tag"
+                      shape="overlay"
                     />
                   </template>
                 </template>
@@ -314,6 +325,20 @@
                       </Button>
                     </div>
                   </div>
+                  <div class="flex">
+                    <span
+                      class="text-neutral flex items-center gap-1.5 text-xs font-bold"
+                    >
+                      <template v-if="isAppTemplate(template)">
+                        <i class="icon-[lucide--panels-top-left]" />
+                        {{ $t('builderToolbar.app', 'App') }}
+                      </template>
+                      <template v-else>
+                        <i class="icon-[lucide--workflow]" />
+                        {{ $t('builderToolbar.nodeGraph', 'Node Graph') }}
+                      </template>
+                    </span>
+                  </div>
                 </div>
               </CardBottom>
             </template>
@@ -331,9 +356,7 @@
             <template #top>
               <CardTop ratio="square">
                 <template #default>
-                  <div
-                    class="h-full w-full animate-pulse bg-dialog-surface"
-                  ></div>
+                  <div class="size-full animate-pulse bg-dialog-surface"></div>
                 </template>
               </CardTop>
             </template>
@@ -341,10 +364,10 @@
               <CardBottom>
                 <div class="px-4 py-3">
                   <div
-                    class="mb-2 h-6 animate-pulse rounded bg-dialog-surface"
+                    class="mb-2 h-6 animate-pulse rounded-sm bg-dialog-surface"
                   ></div>
                   <div
-                    class="h-4 animate-pulse rounded bg-dialog-surface"
+                    class="h-4 animate-pulse rounded-sm bg-dialog-surface"
                   ></div>
                 </div>
               </CardBottom>
@@ -386,33 +409,36 @@ import { useI18n } from 'vue-i18n'
 import CardBottom from '@/components/card/CardBottom.vue'
 import CardContainer from '@/components/card/CardContainer.vue'
 import CardTop from '@/components/card/CardTop.vue'
-import SquareChip from '@/components/chip/SquareChip.vue'
-import SearchBox from '@/components/common/SearchBox.vue'
-import MultiSelect from '@/components/input/MultiSelect.vue'
-import SingleSelect from '@/components/input/SingleSelect.vue'
+import Tag from '@/components/chip/Tag.vue'
+import SearchInput from '@/components/ui/search-input/SearchInput.vue'
+import MultiSelect from '@/components/ui/multi-select/MultiSelect.vue'
+import SingleSelect from '@/components/ui/single-select/SingleSelect.vue'
 import AudioThumbnail from '@/components/templates/thumbnails/AudioThumbnail.vue'
 import CompareSliderThumbnail from '@/components/templates/thumbnails/CompareSliderThumbnail.vue'
 import DefaultThumbnail from '@/components/templates/thumbnails/DefaultThumbnail.vue'
 import HoverDissolveThumbnail from '@/components/templates/thumbnails/HoverDissolveThumbnail.vue'
+import LogoOverlay from '@/components/templates/thumbnails/LogoOverlay.vue'
 import Button from '@/components/ui/button/Button.vue'
 import BaseModalLayout from '@/components/widget/layout/BaseModalLayout.vue'
 import LeftSidePanel from '@/components/widget/panel/LeftSidePanel.vue'
 import { useIntersectionObserver } from '@/composables/useIntersectionObserver'
 import { useLazyPagination } from '@/composables/useLazyPagination'
+import { usePrimeVueOverlayChildStyle } from '@/composables/usePopoverSizing'
 import { useTemplateFiltering } from '@/composables/useTemplateFiltering'
 import { isCloud } from '@/platform/distribution/types'
 import { useTelemetry } from '@/platform/telemetry'
 import { useTemplateWorkflows } from '@/platform/workflow/templates/composables/useTemplateWorkflows'
-import { useWorkflowTemplatesStore } from '@/platform/workflow/templates/repositories/workflowTemplatesStore'
 import type { TemplateInfo } from '@/platform/workflow/templates/types/template'
+import { useWorkflowTemplatesStore } from '@/platform/workflow/templates/repositories/workflowTemplatesStore'
 import type { NavGroupData, NavItemData } from '@/types/navTypes'
 import { OnCloseKey } from '@/types/widgetTypes'
 import { createGridStyle } from '@/utils/gridUtil'
 
 const { t } = useI18n()
 
-const { onClose: originalOnClose } = defineProps<{
+const { onClose: originalOnClose, initialCategory = 'all' } = defineProps<{
   onClose: () => void
+  initialCategory?: string
 }>()
 
 // Track session time for telemetry
@@ -453,6 +479,8 @@ const {
 
 const getEffectiveSourceModule = (template: TemplateInfo) =>
   template.sourceModule || 'default'
+
+const isAppTemplate = (template: TemplateInfo) => template.name.endsWith('.app')
 
 const getBaseThumbnailSrc = (template: TemplateInfo) => {
   const sm = getEffectiveSourceModule(template)
@@ -511,6 +539,9 @@ const allTemplates = computed(() => {
   return workflowTemplatesStore.enhancedTemplates
 })
 
+// Navigation
+const selectedNavItem = ref<string | null>(initialCategory)
+
 // Filter templates based on selected navigation item
 const navigationFilteredTemplates = computed(() => {
   if (!selectedNavItem.value) {
@@ -520,26 +551,61 @@ const navigationFilteredTemplates = computed(() => {
   return workflowTemplatesStore.filterTemplatesByCategory(selectedNavItem.value)
 })
 
-// Template filtering
+// Template filtering with scope awareness
 const {
   searchQuery,
   selectedModels,
   selectedUseCases,
   selectedRunsOn,
   sortBy,
+  activeModels,
+  activeUseCases,
   filteredTemplates,
   availableModels,
   availableUseCases,
   availableRunsOn,
   filteredCount,
   totalCount,
-  resetFilters
+  resetFilters,
+  loadFuseOptions
 } = useTemplateFiltering(navigationFilteredTemplates)
 
+/**
+ * Coordinates state between the selected navigation item and the sort order to
+ * create deterministic, predictable behavior.
+ * @param source The origin of the change ('nav' or 'sort').
+ */
+const coordinateNavAndSort = (source: 'nav' | 'sort') => {
+  const isPopularNav = selectedNavItem.value === 'popular'
+  const isPopularSort = sortBy.value === 'popular'
+
+  if (source === 'nav') {
+    if (isPopularNav && !isPopularSort) {
+      // When navigating to 'Popular' category, automatically set sort to 'Popular'.
+      sortBy.value = 'popular'
+    } else if (!isPopularNav && isPopularSort) {
+      // When navigating away from 'Popular' category while sort is 'Popular', reset sort to default.
+      sortBy.value = 'default'
+    }
+  } else if (source === 'sort') {
+    // When sort is changed away from 'Popular' while in the 'Popular' category,
+    // reset the category to 'All Templates' to avoid a confusing state.
+    if (isPopularNav && !isPopularSort) {
+      selectedNavItem.value = 'all'
+    }
+  }
+}
+
+// Watch for changes from the two sources ('nav' and 'sort') and trigger the coordinator.
+watch(selectedNavItem, () => coordinateNavAndSort('nav'))
+watch(sortBy, () => coordinateNavAndSort('sort'))
+
 // Convert between string array and object array for MultiSelect component
+// Only show selected items that exist in the current scope
 const selectedModelObjects = computed({
   get() {
-    return selectedModels.value.map((model) => ({ name: model, value: model }))
+    // Only include selected models that exist in availableModels
+    return activeModels.value.map((model) => ({ name: model, value: model }))
   },
   set(value: { name: string; value: string }[]) {
     selectedModels.value = value.map((item) => item.value)
@@ -548,7 +614,7 @@ const selectedModelObjects = computed({
 
 const selectedUseCaseObjects = computed({
   get() {
-    return selectedUseCases.value.map((useCase) => ({
+    return activeUseCases.value.map((useCase) => ({
       name: useCase,
       value: useCase
     }))
@@ -574,12 +640,11 @@ const selectedRunsOnObjects = computed({
 const loadingTemplate = ref<string | null>(null)
 const hoveredTemplate = ref<string | null>(null)
 const cardRefs = ref<HTMLElement[]>([])
+const primeVueOverlay = usePrimeVueOverlayChildStyle()
+const selectContentStyle = primeVueOverlay.contentStyle
 
 // Force re-render key for templates when sorting changes
 const templateListKey = ref(0)
-
-// Navigation
-const selectedNavItem = ref<string | null>('all')
 
 // Search text for model filter
 const modelSearchText = ref<string>('')
@@ -645,11 +710,19 @@ const runsOnFilterLabel = computed(() => {
 
 // Sort options
 const sortOptions = computed(() => [
-  { name: t('templateWorkflows.sort.newest', 'Newest'), value: 'newest' },
   {
     name: t('templateWorkflows.sort.default', 'Default'),
     value: 'default'
   },
+  {
+    name: t('templateWorkflows.sort.recommended', 'Recommended'),
+    value: 'recommended'
+  },
+  {
+    name: t('templateWorkflows.sort.popular', 'Popular'),
+    value: 'popular'
+  },
+  { name: t('templateWorkflows.sort.newest', 'Newest'), value: 'newest' },
   {
     name: t('templateWorkflows.sort.vramLowToHigh', 'VRAM Usage (Low to High)'),
     value: 'vram-low-to-high'
@@ -700,7 +773,7 @@ useIntersectionObserver(loadTrigger, () => {
 // Reset pagination when filters change
 watch(
   [
-    searchQuery,
+    filteredTemplates,
     selectedNavItem,
     sortBy,
     selectedModels,
@@ -716,7 +789,7 @@ watch(
 )
 
 // Methods
-const onLoadWorkflow = async (template: any) => {
+const onLoadWorkflow = async (template: TemplateInfo) => {
   loadingTemplate.value = template.name
   try {
     await loadWorkflowTemplate(
@@ -750,10 +823,10 @@ const pageTitle = computed(() => {
 // Initialize templates loading with useAsyncState
 const { isLoading } = useAsyncState(
   async () => {
-    // Run both operations in parallel for better performance
     await Promise.all([
       loadTemplates(),
-      workflowTemplatesStore.loadWorkflowTemplates()
+      workflowTemplatesStore.loadWorkflowTemplates(),
+      loadFuseOptions()
     ])
     return true
   },
@@ -767,19 +840,3 @@ onBeforeUnmount(() => {
   cardRefs.value = [] // Release DOM refs
 })
 </script>
-
-<style>
-/* Ensure the workflow template selector dialog fits within provided dialog */
-.workflow-template-selector-dialog.base-widget-layout {
-  width: 100% !important;
-  max-width: 1400px;
-  height: 100% !important;
-  aspect-ratio: auto !important;
-}
-
-@media (min-width: 1600px) {
-  .workflow-template-selector-dialog.base-widget-layout {
-    max-width: 1600px;
-  }
-}
-</style>

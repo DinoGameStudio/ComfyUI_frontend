@@ -1,12 +1,24 @@
 import { expect } from '@playwright/test'
 
-import { comfyPageFixture as test } from '../fixtures/ComfyPage'
+import type { components } from '@comfyorg/registry-types'
+
+type ReleaseNote = components['schemas']['ReleaseNote']
+import { comfyPageFixture as test } from '@e2e/fixtures/ComfyPage'
+import { TestIds } from '@e2e/fixtures/selectors'
+
+function createMockRelease(overrides?: Partial<ReleaseNote>): ReleaseNote {
+  return {
+    id: 1,
+    project: 'comfyui',
+    version: 'v0.3.44',
+    attention: 'medium',
+    content: '## New Features\n\n- Added awesome feature',
+    published_at: new Date().toISOString(),
+    ...overrides
+  }
+}
 
 test.describe('Release Notifications', () => {
-  test.beforeEach(async ({ comfyPage }) => {
-    await comfyPage.setSetting('Comfy.UseNewMenu', 'Top')
-  })
-
   test('should show help center with release information', async ({
     comfyPage
   }) => {
@@ -21,15 +33,10 @@ test.describe('Release Notifications', () => {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify([
-            {
-              id: 1,
-              project: 'comfyui',
-              version: 'v0.3.44',
-              attention: 'medium',
+            createMockRelease({
               content:
-                '## New Features\n\n- Added awesome feature\n- Fixed important bug',
-              published_at: new Date().toISOString()
-            }
+                '## New Features\n\n- Added awesome feature\n- Fixed important bug'
+            })
           ])
         })
       } else {
@@ -50,7 +57,9 @@ test.describe('Release Notifications', () => {
     await expect(helpMenu).toBeVisible()
 
     // Verify "What's New?" section shows the release
-    const whatsNewSection = comfyPage.page.getByTestId('whats-new-section')
+    const whatsNewSection = comfyPage.page.getByTestId(
+      TestIds.dialogs.whatsNewSection
+    )
     await expect(whatsNewSection).toBeVisible()
 
     // Should show the release version
@@ -59,8 +68,8 @@ test.describe('Release Notifications', () => {
     ).toBeVisible()
 
     // Close help center by dismissable mask
-    await comfyPage.page.click('.help-center-backdrop')
-    await expect(helpMenu).not.toBeVisible()
+    await comfyPage.page.locator('.help-center-backdrop').click()
+    await expect(helpMenu).toBeHidden()
   })
 
   test('should not show release notifications when mocked (default behavior)', async ({
@@ -79,7 +88,9 @@ test.describe('Release Notifications', () => {
     await expect(helpMenu).toBeVisible()
 
     // Verify "What's New?" section shows no releases
-    const whatsNewSection = comfyPage.page.getByTestId('whats-new-section')
+    const whatsNewSection = comfyPage.page.getByTestId(
+      TestIds.dialogs.whatsNewSection
+    )
     await expect(whatsNewSection).toBeVisible()
 
     // Should show "No recent releases" message
@@ -88,10 +99,10 @@ test.describe('Release Notifications', () => {
     ).toBeVisible()
 
     // Should not show any popups or toasts
-    await expect(comfyPage.page.locator('.whats-new-popup')).not.toBeVisible()
+    await expect(comfyPage.page.locator('.whats-new-popup')).toBeHidden()
     await expect(
       comfyPage.page.locator('.release-notification-toast')
-    ).not.toBeVisible()
+    ).toBeHidden()
   })
 
   test('should handle release API errors gracefully', async ({ comfyPage }) => {
@@ -125,7 +136,9 @@ test.describe('Release Notifications', () => {
     await expect(helpMenu).toBeVisible()
 
     // Should show no releases due to error
-    const whatsNewSection = comfyPage.page.getByTestId('whats-new-section')
+    const whatsNewSection = comfyPage.page.getByTestId(
+      TestIds.dialogs.whatsNewSection
+    )
     await expect(
       whatsNewSection.locator('text=No recent releases')
     ).toBeVisible()
@@ -135,7 +148,10 @@ test.describe('Release Notifications', () => {
     comfyPage
   }) => {
     // Disable version update notifications
-    await comfyPage.setSetting('Comfy.Notification.ShowVersionUpdates', false)
+    await comfyPage.settings.setSetting(
+      'Comfy.Notification.ShowVersionUpdates',
+      false
+    )
 
     // Mock release API with test data
     await comfyPage.page.route('**/releases**', async (route) => {
@@ -147,16 +163,7 @@ test.describe('Release Notifications', () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              project: 'comfyui',
-              version: 'v0.3.44',
-              attention: 'high',
-              content: '## New Features\n\n- Added awesome feature',
-              published_at: new Date().toISOString()
-            }
-          ])
+          body: JSON.stringify([createMockRelease({ attention: 'high' })])
         })
       } else {
         await route.continue()
@@ -175,21 +182,26 @@ test.describe('Release Notifications', () => {
     await expect(helpMenu).toBeVisible()
 
     // Verify "What's New?" section is hidden
-    const whatsNewSection = comfyPage.page.getByTestId('whats-new-section')
-    await expect(whatsNewSection).not.toBeVisible()
+    const whatsNewSection = comfyPage.page.getByTestId(
+      TestIds.dialogs.whatsNewSection
+    )
+    await expect(whatsNewSection).toBeHidden()
 
     // Should not show any popups or toasts
-    await expect(comfyPage.page.locator('.whats-new-popup')).not.toBeVisible()
+    await expect(comfyPage.page.locator('.whats-new-popup')).toBeHidden()
     await expect(
       comfyPage.page.locator('.release-notification-toast')
-    ).not.toBeVisible()
+    ).toBeHidden()
   })
 
   test('should not make API calls when notifications are disabled', async ({
     comfyPage
   }) => {
     // Disable version update notifications
-    await comfyPage.setSetting('Comfy.Notification.ShowVersionUpdates', false)
+    await comfyPage.settings.setSetting(
+      'Comfy.Notification.ShowVersionUpdates',
+      false
+    )
 
     // Track API calls
     let apiCallCount = 0
@@ -220,7 +232,10 @@ test.describe('Release Notifications', () => {
     comfyPage
   }) => {
     // Enable version update notifications (default behavior)
-    await comfyPage.setSetting('Comfy.Notification.ShowVersionUpdates', true)
+    await comfyPage.settings.setSetting(
+      'Comfy.Notification.ShowVersionUpdates',
+      true
+    )
 
     // Mock release API with test data
     await comfyPage.page.route('**/releases**', async (route) => {
@@ -232,16 +247,7 @@ test.describe('Release Notifications', () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              project: 'comfyui',
-              version: 'v0.3.44',
-              attention: 'medium',
-              content: '## New Features\n\n- Added awesome feature',
-              published_at: new Date().toISOString()
-            }
-          ])
+          body: JSON.stringify([createMockRelease()])
         })
       } else {
         await route.continue()
@@ -260,7 +266,9 @@ test.describe('Release Notifications', () => {
     await expect(helpMenu).toBeVisible()
 
     // Verify "What's New?" section is visible
-    const whatsNewSection = comfyPage.page.getByTestId('whats-new-section')
+    const whatsNewSection = comfyPage.page.getByTestId(
+      TestIds.dialogs.whatsNewSection
+    )
     await expect(whatsNewSection).toBeVisible()
 
     // Should show the release
@@ -283,14 +291,10 @@ test.describe('Release Notifications', () => {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify([
-            {
-              id: 1,
-              project: 'comfyui',
-              version: 'v0.3.44',
+            createMockRelease({
               attention: 'low',
-              content: '## Bug Fixes\n\n- Fixed minor issue',
-              published_at: new Date().toISOString()
-            }
+              content: '## Bug Fixes\n\n- Fixed minor issue'
+            })
           ])
         })
       } else {
@@ -299,7 +303,10 @@ test.describe('Release Notifications', () => {
     })
 
     // Start with notifications enabled
-    await comfyPage.setSetting('Comfy.Notification.ShowVersionUpdates', true)
+    await comfyPage.settings.setSetting(
+      'Comfy.Notification.ShowVersionUpdates',
+      true
+    )
     await comfyPage.setup({ mockReleases: false })
 
     // Open help center
@@ -308,27 +315,35 @@ test.describe('Release Notifications', () => {
     await helpCenterButton.click()
 
     // Verify "What's New?" section is visible
-    const whatsNewSection = comfyPage.page.getByTestId('whats-new-section')
+    const whatsNewSection = comfyPage.page.getByTestId(
+      TestIds.dialogs.whatsNewSection
+    )
     await expect(whatsNewSection).toBeVisible()
 
     // Close help center
-    await comfyPage.page.click('.help-center-backdrop')
+    await comfyPage.page.locator('.help-center-backdrop').click()
 
     // Disable notifications
-    await comfyPage.setSetting('Comfy.Notification.ShowVersionUpdates', false)
+    await comfyPage.settings.setSetting(
+      'Comfy.Notification.ShowVersionUpdates',
+      false
+    )
 
     // Reopen help center
     await helpCenterButton.click()
 
     // Verify "What's New?" section is now hidden
-    await expect(whatsNewSection).not.toBeVisible()
+    await expect(whatsNewSection).toBeHidden()
   })
 
   test('should handle edge case with empty releases and disabled notifications', async ({
     comfyPage
   }) => {
     // Disable notifications
-    await comfyPage.setSetting('Comfy.Notification.ShowVersionUpdates', false)
+    await comfyPage.settings.setSetting(
+      'Comfy.Notification.ShowVersionUpdates',
+      false
+    )
 
     // Mock empty releases
     await comfyPage.page.route('**/releases**', async (route) => {
@@ -359,7 +374,9 @@ test.describe('Release Notifications', () => {
     await expect(helpMenu).toBeVisible()
 
     // Section should be hidden regardless of empty releases
-    const whatsNewSection = comfyPage.page.getByTestId('whats-new-section')
-    await expect(whatsNewSection).not.toBeVisible()
+    const whatsNewSection = comfyPage.page.getByTestId(
+      TestIds.dialogs.whatsNewSection
+    )
+    await expect(whatsNewSection).toBeHidden()
   })
 })

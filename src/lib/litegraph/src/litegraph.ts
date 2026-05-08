@@ -62,7 +62,7 @@ export interface LGraphNodeConstructor<T extends LGraphNode = LGraphNode> {
   size?: Size
   min_height?: number
   slot_start_y?: number
-  widgets_info?: any
+  widgets_info?: Record<string, unknown>
   collapsable?: boolean
   color?: string
   bgcolor?: string
@@ -87,10 +87,11 @@ export { ContextMenu } from './ContextMenu'
 export { DragAndScale } from './DragAndScale'
 
 export { Rectangle } from './infrastructure/Rectangle'
-export { RecursionError } from './infrastructure/RecursionError'
+export type { SubgraphEventMap } from './infrastructure/SubgraphEventMap'
 export type {
   CanvasColour,
   ColorOption,
+  CreateNodeOptions,
   IContextMenuOptions,
   IContextMenuValue,
   INodeInputSlot,
@@ -100,17 +101,22 @@ export type {
   LinkNetwork,
   Point,
   Positionable,
-  Size
+  Size,
+  SlotIndex
 } from './interfaces'
 export {
   LGraph,
+  type GroupNodeConfigEntry,
+  type GroupNodeWorkflowData,
   type LGraphTriggerAction,
-  type LGraphTriggerParam
+  type LGraphTriggerParam,
+  type GraphAddOptions,
+  type SubgraphId
 } from './LGraph'
 export type { LGraphTriggerEvent } from './types/graphTriggers'
 export { BadgePosition, LGraphBadge } from './LGraphBadge'
 export { LGraphCanvas } from './LGraphCanvas'
-export { LGraphGroup } from './LGraphGroup'
+export { LGraphGroup, type GroupId } from './LGraphGroup'
 export { LGraphNode, type NodeId } from './LGraphNode'
 export { LLink } from './LLink'
 export { createBounds } from './measure'
@@ -141,14 +147,20 @@ export { isColorable } from './utils/type'
 export { createUuidv4 } from './utils/uuid'
 export type { UUID } from './utils/uuid'
 export { truncateText } from './utils/textUtils'
-export { getWidgetStep } from './utils/widget'
+export {
+  evaluateInput,
+  getWidgetStep,
+  resolveNodeRootGraphId
+} from './utils/widget'
 export { distributeSpace, type SpaceRequest } from './utils/spaceDistribution'
 
 export { BaseWidget } from './widgets/BaseWidget'
 
 export { LegacyWidget } from './widgets/LegacyWidget'
 
-export { isComboWidget, isAssetWidget } from './widgets/widgetMap'
+export { isComboWidget } from './widgets/widgetMap'
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export { isAssetWidget } from './widgets/widgetMap'
 // Additional test-specific exports
 export { LGraphButton } from './LGraphButton'
 export { MovingOutputLink } from './canvas/MovingOutputLink'

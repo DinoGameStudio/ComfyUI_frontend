@@ -1,35 +1,45 @@
 import type { KnipConfig } from 'knip'
 
 const config: KnipConfig = {
+  treatConfigHintsAsErrors: true,
   workspaces: {
     '.': {
       entry: [
         '{build,scripts}/**/*.{js,ts}',
         'src/assets/css/style.css',
-        'src/main.ts',
         'src/scripts/ui/menu/index.ts',
-        'src/types/index.ts'
+        'src/types/index.ts',
+        'src/storybook/mocks/**/*.ts'
       ],
-      project: ['**/*.{js,ts,vue}', '*.{js,ts,mts}']
+      project: ['**/*.{js,ts,vue}', '*.{js,ts,mts}', '!.claude/**']
     },
     'apps/desktop-ui': {
-      entry: ['src/main.ts', 'src/i18n.ts'],
+      entry: ['src/i18n.ts'],
       project: ['src/**/*.{js,ts,vue}']
+    },
+    'packages/design-system': {
+      project: ['src/**/*.{css,js,ts}']
     },
     'packages/tailwind-utils': {
       project: ['src/**/*.{js,ts}']
     },
-    'packages/design-system': {
-      entry: ['src/**/*.ts'],
-      project: ['src/**/*.{js,ts}', '*.{js,ts,mts}']
+    'packages/shared-frontend-utils': {
+      project: ['src/**/*.{js,ts}']
     },
     'packages/registry-types': {
       project: ['src/**/*.{js,ts}']
+    },
+    'packages/ingest-types': {
+      project: ['src/**/*.{js,ts}']
+    },
+    'apps/website': {
+      entry: ['src/scripts/**/*.ts']
     }
   },
-  ignoreBinaries: ['python3', 'gh'],
+  ignoreBinaries: ['python3'],
   ignoreDependencies: [
     // Weird importmap things
+    '@iconify-json/lucide',
     '@iconify/json',
     '@primeuix/forms',
     '@primeuix/styled',
@@ -37,19 +47,21 @@ const config: KnipConfig = {
     '@primevue/icons'
   ],
   ignore: [
-    // Auto generated manager types
+    // Auto generated API types
     'src/workbench/extensions/manager/types/generatedManagerTypes.ts',
-    'packages/registry-types/src/comfyRegistryTypes.ts',
-    // Used by a custom node (that should move off of this)
-    'src/scripts/ui/components/splitButton.ts'
+    'packages/ingest-types/src/zod.gen.ts',
+    // Workflow files contain license names that knip misinterprets as binaries
+    '.github/workflows/ci-oss-assets-validation.yaml',
+    // Pending integration in stacked PR
+    'src/components/sidebar/tabs/nodeLibrary/CustomNodesPanel.vue',
+    // Marketing media tooling — adopted by pages in a follow-up PR
+    'apps/website/src/components/common/SiteVideo.vue',
+    'apps/website/src/utils/marketingImage.ts',
+    // Agent review check config, not part of the build
+    '.agents/checks/eslint.strict.config.js',
+    // Devtools extensions, included dynamically
+    'tools/devtools/web/**'
   ],
-  compilers: {
-    // https://github.com/webpro-nl/knip/issues/1008#issuecomment-3207756199
-    css: (text: string) =>
-      [...text.replaceAll('plugin', 'import').matchAll(/(?<=@)import[^;]+/g)]
-        .map((match) => match[0].replace(/url\(['"]?([^'"()]+)['"]?\)/, '$1'))
-        .join('\n')
-  },
   vite: {
     config: ['vite?(.*).config.mts']
   },
@@ -66,7 +78,8 @@ const config: KnipConfig = {
   },
   tags: [
     '-knipIgnoreUnusedButUsedByCustomNodes',
-    '-knipIgnoreUnusedButUsedByVueNodesBranch'
+    '-knipIgnoreUnusedButUsedByVueNodesBranch',
+    '-knipIgnoreUsedByStackedPR'
   ]
 }
 

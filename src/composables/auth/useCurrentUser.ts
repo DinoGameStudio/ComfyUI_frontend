@@ -1,20 +1,15 @@
 import { whenever } from '@vueuse/core'
 import { computed, watch } from 'vue'
 
-import { useFirebaseAuthActions } from '@/composables/auth/useFirebaseAuthActions'
-import { t } from '@/i18n'
-import { useDialogService } from '@/services/dialogService'
 import { useApiKeyAuthStore } from '@/stores/apiKeyAuthStore'
 import { useCommandStore } from '@/stores/commandStore'
-import { useFirebaseAuthStore } from '@/stores/firebaseAuthStore'
+import { useAuthStore } from '@/stores/authStore'
 import type { AuthUserInfo } from '@/types/authTypes'
 
 export const useCurrentUser = () => {
-  const authStore = useFirebaseAuthStore()
+  const authStore = useAuthStore()
   const commandStore = useCommandStore()
   const apiKeyStore = useApiKeyAuthStore()
-  const dialogService = useDialogService()
-  const { deleteAccount } = useFirebaseAuthActions()
 
   const firebaseUser = computed(() => authStore.currentUser)
   const isApiKeyLogin = computed(() => apiKeyStore.isAuthenticated)
@@ -41,8 +36,8 @@ export const useCurrentUser = () => {
     whenever(() => authStore.tokenRefreshTrigger, callback)
 
   const onUserLogout = (callback: () => void) => {
-    watch(resolvedUserInfo, (user) => {
-      if (!user) callback()
+    watch(resolvedUserInfo, (user, prevUser) => {
+      if (prevUser && !user) callback()
     })
   }
 
@@ -116,18 +111,6 @@ export const useCurrentUser = () => {
     await commandStore.execute('Comfy.User.OpenSignInDialog')
   }
 
-  const handleDeleteAccount = async () => {
-    const confirmed = await dialogService.confirm({
-      title: t('auth.deleteAccount.confirmTitle'),
-      message: t('auth.deleteAccount.confirmMessage'),
-      type: 'delete'
-    })
-
-    if (confirmed) {
-      await deleteAccount()
-    }
-  }
-
   return {
     loading: authStore.loading,
     isLoggedIn,
@@ -141,7 +124,6 @@ export const useCurrentUser = () => {
     resolvedUserInfo,
     handleSignOut,
     handleSignIn,
-    handleDeleteAccount,
     onUserResolved,
     onTokenRefreshed,
     onUserLogout

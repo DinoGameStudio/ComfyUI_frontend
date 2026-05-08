@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
+import { MODEL_NODE_MAPPINGS } from '@/platform/assets/mappings/modelNodeMappings'
 import type { ComfyNodeDefImpl } from '@/stores/nodeDefStore'
 import { useNodeDefStore } from '@/stores/nodeDefStore'
 
@@ -9,7 +10,7 @@ export class ModelNodeProvider {
   /** The node definition to use for this model. */
   public nodeDef: ComfyNodeDefImpl
 
-  /** The node input key for where to inside the model name. */
+  /** The node input key for where to insert the model name. */
   public key: string
 
   constructor(nodeDef: ComfyNodeDefImpl, key: string) {
@@ -74,22 +75,49 @@ export const useModelToNodeStore = defineStore('modelToNode', () => {
   }
 
   /**
+   * Find providers for modelType with hierarchical fallback.
+   * Tries exact match first, then progressively shorter parent paths.
+   * e.g., "a/b/c" tries "a/b/c" → "a/b" → "a".
+   */
+  function findProvidersWithFallback(
+    modelType: string
+  ): ModelNodeProvider[] | undefined {
+    if (!modelType || typeof modelType !== 'string') {
+      return undefined
+    }
+
+    const segments = modelType.split('/')
+    for (let i = segments.length; i >= 1; i--) {
+      const path = segments.slice(0, i).join('/')
+      const providers = modelToNodeMap.value[path]
+      if (providers && providers.length > 0) return providers
+    }
+
+    return undefined
+  }
+
+  /**
    * Get the node provider for the given model type name.
+   * Supports hierarchical lookups: if "parent/child" has no match, falls back to "parent".
    * @param modelType The name of the model type to get the node provider for.
    * @returns The node provider for the given model type name.
    */
-  function getNodeProvider(modelType: string): ModelNodeProvider | undefined {
+  function getNodeProvider(modelType: unknown): ModelNodeProvider | undefined {
+    if (typeof modelType !== 'string') return undefined
     registerDefaults()
-    return modelToNodeMap.value[modelType]?.[0]
+    return findProvidersWithFallback(modelType)?.[0]
   }
+
   /**
    * Get the list of all valid node providers for the given model type name.
+   * Supports hierarchical lookups: if "parent/child" has no match, falls back to "parent".
    * @param modelType The name of the model type to get the node providers for.
    * @returns The list of all valid node providers for the given model type name.
    */
-  function getAllNodeProviders(modelType: string): ModelNodeProvider[] {
+  function getAllNodeProviders(modelType: unknown): ModelNodeProvider[] {
+    if (typeof modelType !== 'string') return []
     registerDefaults()
-    return modelToNodeMap.value[modelType] ?? []
+    return findProvidersWithFallback(modelType) ?? []
   }
   /**
    * Register a node provider for the given model type name.
@@ -129,30 +157,9 @@ export const useModelToNodeStore = defineStore('modelToNode', () => {
     }
     haveDefaultsLoaded.value = true
 
-    quickRegister('checkpoints', 'CheckpointLoaderSimple', 'ckpt_name')
-    quickRegister('checkpoints', 'ImageOnlyCheckpointLoader', 'ckpt_name')
-    quickRegister('loras', 'LoraLoader', 'lora_name')
-    quickRegister('loras', 'LoraLoaderModelOnly', 'lora_name')
-    quickRegister('vae', 'VAELoader', 'vae_name')
-    quickRegister('controlnet', 'ControlNetLoader', 'control_net_name')
-    quickRegister('diffusion_models', 'UNETLoader', 'unet_name')
-    quickRegister('upscale_models', 'UpscaleModelLoader', 'model_name')
-    quickRegister('style_models', 'StyleModelLoader', 'style_model_name')
-    quickRegister('gligen', 'GLIGENLoader', 'gligen_name')
-    quickRegister('clip_vision', 'CLIPVisionLoader', 'clip_name')
-    quickRegister('text_encoders', 'CLIPLoader', 'clip_name')
-    quickRegister('audio_encoders', 'AudioEncoderLoader', 'audio_encoder_name')
-    quickRegister('model_patches', 'ModelPatchLoader', 'name')
-    quickRegister(
-      'animatediff_models',
-      'ADE_LoadAnimateDiffModel',
-      'model_name'
-    )
-    quickRegister(
-      'animatediff_motion_lora',
-      'ADE_AnimateDiffLoRALoader',
-      'name'
-    )
+    for (const [modelType, nodeClass, key] of MODEL_NODE_MAPPINGS) {
+      quickRegister(modelType, nodeClass, key)
+    }
   }
 
   return {

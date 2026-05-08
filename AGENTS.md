@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+See @docs/guidance/\*.md for file-type-specific conventions (auto-loaded by glob).
+
 ## Project Structure & Module Organization
 
 - Source: `src/`
@@ -19,33 +21,53 @@
 - i18n: `src/i18n.ts`,
 - Entry Point: `src/main.ts`.
 - Tests:
-  - unit/component in `tests-ui/` and `src/**/*.test.ts`
+  - unit/component in `src/**/*.test.ts`
   - E2E (Playwright) in `browser_tests/**/*.spec.ts`
 - Public assets: `public/`
 - Build output: `dist/`
 - Configs
   - `vite.config.mts`
-  - `vitest.config.ts`
   - `playwright.config.ts`
   - `eslint.config.ts`
-  - `.prettierrc`
+  - `.oxfmtrc.json`
+  - `.oxlintrc.json`
   - etc.
 
 ## Monorepo Architecture
 
 The project uses **Nx** for build orchestration and task management
 
+## Package Manager
+
+This project uses **pnpm**. Always prefer scripts defined in `package.json` (e.g., `pnpm test:unit`, `pnpm lint`). To run arbitrary packages not in scripts, use `pnpx` or `pnpm dlx` — never `npx`.
+
 ## Build, Test, and Development Commands
 
 - `pnpm dev`: Start Vite dev server.
+- `pnpm dev:cloud`: Dev server connected to cloud backend (testcloud.comfy.org)
 - `pnpm dev:electron`: Dev server with Electron API mocks
 - `pnpm build`: Type-check then production build to `dist/`
 - `pnpm preview`: Preview the production build locally
 - `pnpm test:unit`: Run Vitest unit tests
-- `pnpm test:browser`: Run Playwright E2E tests (`browser_tests/`)
+- `pnpm test:browser:local`: Run Playwright E2E tests (`browser_tests/`)
 - `pnpm lint` / `pnpm lint:fix`: Lint (ESLint)
-- `pnpm format` / `pnpm format:check`: Prettier
+- `pnpm format` / `pnpm format:check`: oxfmt
 - `pnpm typecheck`: Vue TSC type checking
+- `pnpm storybook`: Start Storybook development server
+
+## Development Workflow
+
+1. Make code changes
+2. Run relevant tests
+3. Run `pnpm typecheck`, `pnpm lint`, `pnpm format`
+4. Check if README updates are needed
+5. Suggest docs.comfy.org updates for user-facing changes
+
+## Git Conventions
+
+- Use `prefix:` format: `feat:`, `fix:`, `test:`
+- Add "Fixes #n" to PR descriptions
+- Never mention Claude/AI in commits
 
 ## Coding Style & Naming Conventions
 
@@ -55,7 +77,7 @@ The project uses **Nx** for build orchestration and task management
     - Composition API only
   - Tailwind 4 styling
     - Avoid `<style>` blocks
-- Style: (see `.prettierrc`)
+- Style: (see `.oxfmtrc.json`)
   - Indent 2 spaces
   - single quotes
   - no trailing semicolons
@@ -63,6 +85,9 @@ The project uses **Nx** for build orchestration and task management
 - Imports:
   - sorted/grouped by plugin
   - run `pnpm format` before committing
+  - use separate `import type` statements, not inline `type` in mixed imports
+    - ✅ `import type { Foo } from './foo'` + `import { bar } from './foo'`
+    - ❌ `import { bar, type Foo } from './foo'`
 - ESLint:
   - Vue + TS rules
   - no floating promises
@@ -72,7 +97,6 @@ The project uses **Nx** for build orchestration and task management
   - Vue components in PascalCase (e.g., `MenuHamburger.vue`)
   - composables `useXyz.ts`
   - Pinia stores `*Store.ts`
-
 
 ## Commit & Pull Request Guidelines
 
@@ -111,15 +135,18 @@ The project uses **Nx** for build orchestration and task management
 
     ```typescript
     const { nodes, showTotal = true } = defineProps<{
-    nodes: ApiNodeCost[]
-    showTotal?: boolean
+      nodes: ApiNodeCost[]
+      showTotal?: boolean
     }>()
     ```
 
   - Prefer reactive props destructuring to `const props = defineProps<...>`
   - Do not use `withDefaults` or runtime props declaration
   - Do not import Vue macros unnecessarily
-  - Prefer `useModel` to separately defining a prop and emit
+  - Prefer `defineModel` to separately defining a prop and emit for v-model bindings
+  - Define slots via template usage, not `defineSlots`
+  - Use same-name shorthand for slot prop bindings: `:isExpanded` instead of `:is-expanded="isExpanded"`
+  - Derive component types using `vue-component-type-helpers` (`ComponentProps`, `ComponentSlots`) instead of separate type files
   - Be judicious with addition of new refs or other state
     - If it's possible to accomplish the design goals with just a prop, don't add a `ref`
     - If it's possible to use the `ref` or prop directly, don't add a `computed`
@@ -137,7 +164,7 @@ The project uses **Nx** for build orchestration and task management
 8. Implement proper error handling
 9. Follow Vue 3 style guide and naming conventions
 10. Use Vite for fast development and building
-11. Use vue-i18n in composition API for any string literals. Place new translation entries in src/locales/en/main.json
+11. Use vue-i18n in composition API for any string literals. Place new translation entries in src/locales/en/main.json. Use the plurals system in i18n instead of hardcoding pluralization in templates.
 12. Avoid new usage of PrimeVue components
 13. Write tests for all changes, especially bug fixes to catch future regressions
 14. Write code that is expressive and self-documenting to the furthest degree possible. This reduces the need for code comments which can get out of sync with the code itself. Try to avoid comments unless absolutely necessary
@@ -153,7 +180,15 @@ The project uses **Nx** for build orchestration and task management
 24. Do not use function expressions if it's possible to use function declarations instead
 25. Watch out for [Code Smells](https://wiki.c2.com/?CodeSmell) and refactor to avoid them
 
+## Design Standards
+
+Before implementing any user-facing feature, consult the [Comfy Design Standards](https://www.figma.com/design/QreIv5htUaSICNuO2VBHw0/Comfy-Design-Standards) Figma file. Use the Figma MCP to fetch it live — the file is the single source of truth and may be updated by designers at any time.
+
+See `docs/guidance/design-standards.md` for Figma file keys, section node IDs, and component references.
+
 ## Testing Guidelines
+
+See @docs/testing/\*.md for detailed patterns.
 
 - Frameworks:
   - Vitest (unit/component, happy-dom)
@@ -180,7 +215,7 @@ The project uses **Nx** for build orchestration and task management
 3. Keep your module mocks contained  
    Do not use global mutable state within the test file  
    Use `vi.hoisted()` if necessary to allow for per-test Arrange phase manipulation of deeper mock state
-4. For Component testing, use [Vue Test Utils](https://test-utils.vuejs.org/) and especially follow the advice [about making components easy to test](https://test-utils.vuejs.org/guide/essentials/easy-to-test.html)
+4. For Component testing, prefer [@testing-library/vue](https://testing-library.com/docs/vue-testing-library/intro/) with `@testing-library/user-event` for user-centric, behavioral tests. [Vue Test Utils](https://test-utils.vuejs.org/) is also accepted, especially for tests that need direct access to the component wrapper (e.g., `findComponent`, `emitted()`). Follow the advice [about making components easy to test](https://test-utils.vuejs.org/guide/essentials/easy-to-test.html)
 5. Aim for behavioral coverage of critical and new features
 
 ### Playwright / Browser / E2E Tests
@@ -188,6 +223,7 @@ The project uses **Nx** for build orchestration and task management
 1. Follow the Best Practices described [in the Playwright documentation](https://playwright.dev/docs/best-practices)
 2. Do not use waitForTimeout, use Locator actions and [retrying assertions](https://playwright.dev/docs/test-assertions#auto-retrying-assertions)
 3. Tags like `@mobile`, `@2x` are respected by config and should be used for relevant tests
+4. Type all API mock responses in `route.fulfill()` using generated types or schemas from `packages/ingest-types`, `packages/registry-types`, `src/workbench/extensions/manager/types/generatedManagerTypes.ts`, or `src/schemas/` — see `docs/guidance/playwright.md` for the full source-of-truth table
 
 ## External Resources
 
@@ -197,11 +233,24 @@ The project uses **Nx** for build orchestration and task management
 - shadcn/vue: <https://www.shadcn-vue.com/>
 - Reka UI: <https://reka-ui.com/>
 - PrimeVue: <https://primevue.org>
+- Comfy Design Standards: <https://www.figma.com/design/QreIv5htUaSICNuO2VBHw0/Comfy-Design-Standards>
 - ComfyUI: <https://docs.comfy.org>
 - Electron: <https://www.electronjs.org/docs/latest/>
 - Wiki: <https://deepwiki.com/Comfy-Org/ComfyUI_frontend/1-overview>
 - Nx: <https://nx.dev/docs/reference/nx-commands>
 - [Practical Test Pyramid](https://martinfowler.com/articles/practical-test-pyramid.html)
+
+## Architecture Decision Records
+
+All architectural decisions are documented in `docs/adr/`. Code changes must be consistent with accepted ADRs. Proposed ADRs indicate design direction and should be treated as guidance. See `.agents/checks/adr-compliance.md` for automated validation rules.
+
+### Entity Architecture Constraints (ADR 0003 + ADR 0008)
+
+1. **Command pattern for all mutations**: Every entity state change must be a serializable, idempotent, deterministic command — replayable, undoable, and transmittable over CRDT. No imperative fire-and-forget mutation APIs. Systems produce command batches, not direct side effects.
+2. **Centralized registries and ECS-style access**: Entity data lives in the World (centralized registry), queried via `world.getComponent(entityId, ComponentType)`. Do not add new instance properties/methods to entity classes. Do not use OOP inheritance for entity modeling.
+3. **No god-object growth**: Do not add methods to `LGraphNode`, `LGraphCanvas`, `LGraph`, or `Subgraph`. Extract to systems, stores, or composables.
+4. **Plain data components**: ECS components are plain data objects — no methods, no back-references to parent entities. Behavior belongs in systems (pure functions).
+5. **Extension ecosystem impact**: Changes to entity callbacks (`onConnectionsChange`, `onRemoved`, `onAdded`, `onConnectInput/Output`, `onConfigure`, `onWidgetChanged`), `node.widgets` access, `node.serialize`, or `graph._version++` affect 40+ custom node repos and require migration guidance.
 
 ## Project Philosophy
 
@@ -240,7 +289,7 @@ A particular type of complexity is over-engineering, where developers have made 
 
 ## Repository Navigation
 
-- Check README files in key folders (tests-ui, browser_tests, composables, etc.)
+- Check README files in key folders (browser_tests, composables, etc.)
 - Prefer running single tests for performance
 - Use --help for unfamiliar CLI tools
 
@@ -263,15 +312,27 @@ When referencing Comfy-Org repos:
   - Instead use a semantic value from the `style.css` theme
     - e.g. `bg-node-component-surface`
 - NEVER use `:class="[]"` to merge class names
-  - Always use `import { cn } from '@/utils/tailwindUtil'`
+  - Always use `import { cn } from '@comfyorg/tailwind-utils'`
     - e.g. `<div :class="cn('text-node-component-header-icon', hasError && 'text-danger')" />`
   - Use `cn()` inline in the template when feasible instead of creating a `computed` to hold the value
 - NEVER use `!important` or the `!` important prefix for tailwind classes
   - Find existing `!important` classes that are interfering with the styling and propose corrections of those instead.
+- NEVER use arbitrary percentage values like `w-[80%]` when a Tailwind fraction utility exists
+  - Use `w-4/5` instead of `w-[80%]`, `w-1/2` instead of `w-[50%]`, etc.
+- NEVER use font-size classes (`text-xs`, `text-sm`, etc.) to size `icon-[...]` (iconify) icons
+  - Iconify icons size via `width`/`height: 1.2em`, so font-size produces unpredictable results
+  - Use `size-*` classes for explicit sizing, or set font-size on the **parent** container and let `1.2em` scale naturally
 
 ## Agent-only rules
 
 Rules for agent-based coding tasks.
+
+### Chrome DevTools MCP
+
+When using `take_snapshot` to inspect dropdowns, listboxes, or other components with dynamic options:
+
+- Use `verbose: true` to see the full accessibility tree including list items
+- Non-verbose snapshots often omit nested options in comboboxes/listboxes
 
 ### Temporary Files
 

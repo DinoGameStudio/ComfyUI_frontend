@@ -1,9 +1,12 @@
-import type { VueWrapper } from '@vue/test-utils'
-import { mount } from '@vue/test-utils'
+import { render, screen } from '@testing-library/vue'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import type { ReleaseNote } from '../common/releaseService'
 import ReleaseNotificationToast from './ReleaseNotificationToast.vue'
+
+const mockData = vi.hoisted(() => ({ isDesktop: false }))
 
 const { commandExecuteMock } = vi.hoisted(() => ({
   commandExecuteMock: vi.fn()
@@ -11,6 +14,14 @@ const { commandExecuteMock } = vi.hoisted(() => ({
 
 const { toastErrorHandlerMock } = vi.hoisted(() => ({
   toastErrorHandlerMock: vi.fn()
+}))
+
+vi.mock('@/platform/distribution/types', () => ({
+  isCloud: false,
+  isNightly: false,
+  get isDesktop() {
+    return mockData.isDesktop
+  }
 }))
 
 // Mock dependencies
@@ -56,6 +67,14 @@ vi.mock('@/stores/commandStore', () => ({
   }))
 }))
 
+vi.mock('@/composables/useExternalLink', () => ({
+  useExternalLink: vi.fn(() => ({
+    buildDocsUrl: vi.fn((path: string) => `https://docs.comfy.org${path}`),
+    staticUrls: {},
+    docsPaths: {}
+  }))
+}))
+
 // Mock release store
 const mockReleaseStore = {
   recentRelease: null as ReleaseNote | null,
@@ -71,10 +90,8 @@ vi.mock('../common/releaseStore', () => ({
 }))
 
 describe('ReleaseNotificationToast', () => {
-  let wrapper: VueWrapper<InstanceType<typeof ReleaseNotificationToast>>
-
-  const mountComponent = (props = {}) => {
-    return mount(ReleaseNotificationToast, {
+  const renderComponent = (props = {}) => {
+    return render(ReleaseNotificationToast, {
       global: {
         mocks: {
           $t: (key: string) => {
@@ -90,7 +107,6 @@ describe('ReleaseNotificationToast', () => {
           }
         },
         stubs: {
-          // Stub Lucide icons
           'i-lucide-rocket': true,
           'i-lucide-external-link': true
         }
@@ -101,9 +117,9 @@ describe('ReleaseNotificationToast', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    // Reset store state
+    mockData.isDesktop = false
     mockReleaseStore.recentRelease = null
-    mockReleaseStore.shouldShowToast = true // Force show for testing
+    mockReleaseStore.shouldShowToast = true
   })
 
   it('renders correctly when shouldShow is true', () => {
@@ -112,8 +128,8 @@ describe('ReleaseNotificationToast', () => {
       content: '# Test Release\n\nSome content'
     } as ReleaseNote
 
-    wrapper = mountComponent()
-    expect(wrapper.find('.release-toast-popup').exists()).toBe(true)
+    renderComponent()
+    expect(screen.getByText('New update is out!')).toBeInTheDocument()
   })
 
   it('displays rocket icon', () => {
@@ -122,8 +138,12 @@ describe('ReleaseNotificationToast', () => {
       content: '# Test Release'
     } as ReleaseNote
 
-    wrapper = mountComponent()
-    expect(wrapper.find('.icon-\\[lucide--rocket\\]').exists()).toBe(true)
+    const { container } = renderComponent()
+    /* eslint-disable testing-library/no-container, testing-library/no-node-access */
+    expect(
+      container.querySelector('.icon-\\[lucide--rocket\\]')
+    ).toBeInTheDocument()
+    /* eslint-enable testing-library/no-container, testing-library/no-node-access */
   })
 
   it('displays release version', () => {
@@ -132,8 +152,8 @@ describe('ReleaseNotificationToast', () => {
       content: '# Test Release'
     } as ReleaseNote
 
-    wrapper = mountComponent()
-    expect(wrapper.text()).toContain('1.2.3')
+    renderComponent()
+    expect(screen.getByText('1.2.3')).toBeInTheDocument()
   })
 
   it('calls handleSkipRelease when skip button is clicked', async () => {
@@ -142,15 +162,10 @@ describe('ReleaseNotificationToast', () => {
       content: '# Test Release'
     } as ReleaseNote
 
-    wrapper = mountComponent()
+    renderComponent()
+    const user = userEvent.setup()
 
-    const buttons = wrapper.findAll('button')
-    const skipButton = buttons.find(
-      (btn) =>
-        btn.text().includes('Skip') || btn.element.innerHTML.includes('skip')
-    )
-    expect(skipButton).toBeDefined()
-    await skipButton!.trigger('click')
+    await user.click(screen.getByRole('button', { name: /skip/i }))
 
     expect(mockReleaseStore.handleSkipRelease).toHaveBeenCalledWith('1.2.3')
   })
@@ -161,17 +176,16 @@ describe('ReleaseNotificationToast', () => {
       content: '# Test Release'
     } as ReleaseNote
 
-    // Mock window.open
     const mockWindowOpen = vi.fn()
     Object.defineProperty(window, 'open', {
       value: mockWindowOpen,
       writable: true
     })
 
-    wrapper = mountComponent()
+    renderComponent()
+    const user = userEvent.setup()
 
-    // Call the handler directly instead of triggering DOM event
-    await wrapper.vm.handleUpdate()
+    await user.click(screen.getByRole('button', { name: /update/i }))
 
     expect(mockWindowOpen).toHaveBeenCalledWith(
       'https://docs.comfy.org/installation/update_comfyui',
@@ -179,7 +193,8 @@ describe('ReleaseNotificationToast', () => {
     )
   })
 
-  it('executes desktop updater flow when running in Electron', async () => {
+  it('executes desktop updater flow when running on desktop', async () => {
+    mockData.isDesktop = true
     mockReleaseStore.recentRelease = {
       version: '1.2.3',
       content: '# Test Release'
@@ -192,21 +207,21 @@ describe('ReleaseNotificationToast', () => {
       value: mockWindowOpen,
       writable: true
     })
-    ;(window as any).electronAPI = {}
 
-    wrapper = mountComponent()
-    await wrapper.vm.handleUpdate()
+    renderComponent()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /update/i }))
 
     expect(commandExecuteMock).toHaveBeenCalledWith(
       'Comfy-Desktop.CheckForUpdates'
     )
     expect(mockWindowOpen).not.toHaveBeenCalled()
     expect(toastErrorHandlerMock).not.toHaveBeenCalled()
-
-    delete (window as any).electronAPI
   })
 
-  it('shows an error toast if the desktop updater flow fails in Electron', async () => {
+  it('shows an error toast if the desktop updater flow fails on desktop', async () => {
+    mockData.isDesktop = true
     mockReleaseStore.recentRelease = {
       version: '1.2.3',
       content: '# Test Release'
@@ -220,15 +235,14 @@ describe('ReleaseNotificationToast', () => {
       value: mockWindowOpen,
       writable: true
     })
-    ;(window as any).electronAPI = {}
 
-    wrapper = mountComponent()
-    await wrapper.vm.handleUpdate()
+    renderComponent()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /update/i }))
 
     expect(toastErrorHandlerMock).toHaveBeenCalledWith(error)
     expect(mockWindowOpen).not.toHaveBeenCalled()
-
-    delete (window as any).electronAPI
   })
 
   it('calls handleShowChangelog when learn more link is clicked', async () => {
@@ -237,10 +251,10 @@ describe('ReleaseNotificationToast', () => {
       content: '# Test Release'
     } as ReleaseNote
 
-    wrapper = mountComponent()
+    renderComponent()
+    const user = userEvent.setup()
 
-    // Call the handler directly instead of triggering DOM event
-    await wrapper.vm.handleLearnMore()
+    await user.click(screen.getByRole('link', { name: /what's new/i }))
 
     expect(mockReleaseStore.handleShowChangelog).toHaveBeenCalledWith('1.2.3')
   })
@@ -251,12 +265,12 @@ describe('ReleaseNotificationToast', () => {
       content: '# Test Release'
     } as ReleaseNote
 
-    wrapper = mountComponent()
+    renderComponent()
 
-    const learnMoreLink = wrapper.find('a[target="_blank"]')
-    expect(learnMoreLink.exists()).toBe(true)
-    expect(learnMoreLink.attributes('href')).toContain(
-      'docs.comfy.org/changelog'
+    const learnMoreLink = screen.getByRole('link', { name: /what's new/i })
+    expect(learnMoreLink).toHaveAttribute(
+      'href',
+      expect.stringContaining('docs.comfy.org/changelog')
     )
   })
 
@@ -274,16 +288,15 @@ describe('ReleaseNotificationToast', () => {
       content: '# Test Release Title\n\nSome content'
     } as ReleaseNote
 
-    wrapper = mountComponent()
+    renderComponent()
 
-    // Should call markdown renderer with title removed
     expect(mockMarkdownRenderer).toHaveBeenCalledWith('\n\nSome content')
   })
 
-  it('fetches releases on mount when not already loaded', async () => {
-    mockReleaseStore.releases = [] // Empty releases array
+  it('fetches releases on mount when not already loaded', () => {
+    mockReleaseStore.releases = []
 
-    wrapper = mountComponent()
+    renderComponent()
 
     expect(mockReleaseStore.fetchReleases).toHaveBeenCalled()
   })
@@ -295,61 +308,52 @@ describe('ReleaseNotificationToast', () => {
       content: ''
     } as ReleaseNote
 
-    wrapper = mountComponent()
+    renderComponent()
 
-    // Should render fallback content
-    const descriptionElement = wrapper.find('.pl-14')
-    expect(descriptionElement.exists()).toBe(true)
-    expect(descriptionElement.text()).toContain('Check out the latest')
+    expect(screen.getByText(/Check out the latest/)).toBeInTheDocument()
   })
 
   it('auto-hides after timeout', async () => {
     vi.useFakeTimers()
+    try {
+      mockReleaseStore.recentRelease = {
+        version: '1.2.3',
+        content: '# Test Release'
+      } as ReleaseNote
 
-    mockReleaseStore.recentRelease = {
-      version: '1.2.3',
-      content: '# Test Release'
-    } as ReleaseNote
+      renderComponent()
 
-    wrapper = mountComponent()
+      expect(screen.getByText('New update is out!')).toBeInTheDocument()
 
-    // Initially visible
-    expect(wrapper.find('.release-toast-popup').exists()).toBe(true)
+      vi.advanceTimersByTime(8000)
+      await nextTick()
 
-    // Fast-forward time to trigger auto-hide
-    vi.advanceTimersByTime(8000)
-    await wrapper.vm.$nextTick()
-
-    // Component should call dismissToast internally which hides it
-    // We can't test DOM visibility change because the component uses local state
-    // But we can verify the timer was set and would have triggered
-    expect(vi.getTimerCount()).toBe(0) // Timer should be cleared after auto-hide
-
-    vi.useRealTimers()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('clears auto-hide timer when manually dismissed', async () => {
     vi.useFakeTimers()
+    try {
+      mockReleaseStore.recentRelease = {
+        version: '1.2.3',
+        content: '# Test Release'
+      } as ReleaseNote
 
-    mockReleaseStore.recentRelease = {
-      version: '1.2.3',
-      content: '# Test Release'
-    } as ReleaseNote
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
 
-    wrapper = mountComponent()
+      renderComponent()
 
-    // Start the timer
-    vi.advanceTimersByTime(1000)
+      vi.advanceTimersByTime(1000)
 
-    // Manually dismiss by calling handler directly
-    await wrapper.vm.handleSkip()
+      await user.click(screen.getByRole('button', { name: /skip/i }))
 
-    // Timer should be cleared
-    expect(vi.getTimerCount()).toBe(0)
-
-    // Verify the store method was called (manual dismissal)
-    expect(mockReleaseStore.handleSkipRelease).toHaveBeenCalled()
-
-    vi.useRealTimers()
+      expect(vi.getTimerCount()).toBe(0)
+      expect(mockReleaseStore.handleSkipRelease).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

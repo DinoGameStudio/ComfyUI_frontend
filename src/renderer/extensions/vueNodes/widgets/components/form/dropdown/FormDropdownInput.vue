@@ -1,26 +1,25 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
-import { cn } from '@/utils/tailwindUtil'
+import { cn } from '@comfyorg/tailwind-utils'
 
 import { WidgetInputBaseClass } from '../../layout'
-import type { DropdownItem, SelectedKey } from './types'
+import type { FormDropdownInputProps } from './types'
 
-interface Props {
-  isOpen?: boolean
-  placeholder?: string
-  items: DropdownItem[]
-  selected: Set<SelectedKey>
-  maxSelectable: number
-  uploadable: boolean
-  disabled: boolean
-  accept?: string
-}
+const {
+  isOpen,
+  placeholder = 'Select...',
+  items,
+  displayItems,
+  selected,
+  maxSelectable,
+  uploadable,
+  disabled,
+  accept
+} = defineProps<FormDropdownInputProps>()
 
-const props = withDefaults(defineProps<Props>(), {
-  isOpen: false,
-  placeholder: 'Select...'
-})
+const { t } = useI18n()
 
 const emit = defineEmits<{
   (e: 'select-click', event: MouseEvent): void
@@ -28,15 +27,16 @@ const emit = defineEmits<{
 }>()
 
 const selectedItems = computed(() => {
-  return props.items.filter((item) => props.selected.has(item.id))
+  const itemsToSearch = displayItems ?? items
+  return itemsToSearch.filter((item) => selected.has(item.id))
 })
 
 const theButtonStyle = computed(() =>
   cn(
-    'border-0 bg-component-node-widget-background outline-none text-text-secondary',
-    props.disabled
+    'border-0 bg-component-node-widget-background text-text-secondary outline-none',
+    disabled
       ? 'cursor-not-allowed'
-      : 'hover:bg-component-node-widget-background-hovered cursor-pointer',
+      : 'cursor-pointer hover:bg-component-node-widget-background-hovered',
     selectedItems.value.length > 0 && 'text-text-primary'
   )
 )
@@ -46,16 +46,15 @@ const theButtonStyle = computed(() =>
   <div
     :class="
       cn(WidgetInputBaseClass, 'flex text-base leading-none', {
-        'opacity-50 cursor-not-allowed !outline-zinc-300/10': disabled
+        'cursor-not-allowed opacity-50 outline-node-component-border': disabled
       })
     "
   >
-    <!-- Dropdown -->
     <button
       :class="
         cn(
           theButtonStyle,
-          'flex justify-between items-center flex-1 min-w-0 h-8',
+          'flex h-8 min-w-0 flex-1 items-center justify-between',
           {
             'rounded-l-lg': uploadable,
             'rounded-lg': !uploadable
@@ -64,7 +63,7 @@ const theButtonStyle = computed(() =>
       "
       @click="emit('select-click', $event)"
     >
-      <span class="min-w-0 flex-1 px-1 py-2 text-left truncate">
+      <span class="min-w-0 flex-1 truncate px-1 py-2 text-left">
         <span v-if="!selectedItems.length">
           {{ placeholder }}
         </span>
@@ -76,27 +75,27 @@ const theButtonStyle = computed(() =>
         class="icon-[lucide--chevron-down]"
         :class="
           cn(
-            'mr-2 size-4 transition-transform duration-200 flex-shrink-0 text-component-node-foreground-secondary',
+            'mr-2 size-4 shrink-0 text-component-node-foreground-secondary transition-transform duration-200',
             isOpen && 'rotate-180'
           )
         "
       />
     </button>
-    <!-- Open File -->
     <label
       v-if="uploadable"
       :class="
         cn(
           theButtonStyle,
           'relative',
-          'size-8 flex justify-center items-center border-l rounded-r-lg border-zinc-300/10'
+          'flex size-8 items-center justify-center rounded-r-lg border-l border-node-component-border'
         )
       "
     >
-      <i class="icon-[lucide--folder-search] size-4" />
+      <i class="icon-[lucide--folder-search] size-4" aria-hidden="true" />
       <input
         type="file"
         class="absolute inset-0 -z-1 opacity-0"
+        :aria-label="t('g.upload')"
         :multiple="maxSelectable > 1"
         :disabled="disabled"
         :accept="accept"

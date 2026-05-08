@@ -1,11 +1,9 @@
-import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
-import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper'
-import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader'
-import { type GLTF, GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
-import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader'
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader'
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader'
+// Use type-only imports to avoid pulling THREE.js into the main bundle
+// These imports are erased at compile time and don't create runtime dependencies
+import type * as THREE from 'three'
+import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
+import type { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper'
+import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader'
 
 export type MaterialMode =
   | 'original'
@@ -31,9 +29,21 @@ export interface SceneConfig {
   backgroundRenderMode?: BackgroundRenderModeType
 }
 
+export type GizmoMode = 'translate' | 'rotate' | 'scale'
+
+export interface GizmoConfig {
+  enabled: boolean
+  mode: GizmoMode
+  position: { x: number; y: number; z: number }
+  rotation: { x: number; y: number; z: number }
+  scale: { x: number; y: number; z: number }
+}
+
 export interface ModelConfig {
   upDirection: UpDirection
   materialMode: MaterialMode
+  showSkeleton: boolean
+  gizmo?: GizmoConfig
 }
 
 export interface CameraConfig {
@@ -44,10 +54,18 @@ export interface CameraConfig {
 
 export interface LightConfig {
   intensity: number
+  hdri?: HDRIConfig
 }
 
-export interface EventCallback {
-  (data?: any): void
+export interface HDRIConfig {
+  enabled: boolean
+  hdriPath: string
+  showAsBackground: boolean
+  intensity: number
+}
+
+export interface EventCallback<T = unknown> {
+  (data: T): void
 }
 
 export interface Load3DOptions {
@@ -58,6 +76,11 @@ export interface Load3DOptions {
   // Dynamic dimension provider (called on every render)
   // Use this for reactive dimensions that change over time
   getDimensions?: () => { width: number; height: number } | null
+
+  // Returns the current canvas zoom scale (e.g. ds.scale from LiteGraph).
+  // Used to scale the renderer pixel ratio so the 3D scene renders at the
+  // correct resolution when the graph is zoomed in or out.
+  getZoomScale?: () => number
 
   // Viewer mode flag (affects aspect ratio behavior)
   isViewerMode?: boolean
@@ -127,9 +150,9 @@ export interface ViewHelperManagerInterface extends BaseManager {
 }
 
 export interface EventManagerInterface {
-  addEventListener(event: string, callback: EventCallback): void
-  removeEventListener(event: string, callback: EventCallback): void
-  emitEvent(event: string, data?: any): void
+  addEventListener<T>(event: string, callback: EventCallback<T>): void
+  removeEventListener<T>(event: string, callback: EventCallback<T>): void
+  emitEvent<T>(event: string, data: T): void
 }
 
 export interface AnimationManagerInterface extends BaseManager {
@@ -140,12 +163,18 @@ export interface AnimationManagerInterface extends BaseManager {
   isAnimationPlaying: boolean
   animationSpeed: number
 
-  setupModelAnimations(model: THREE.Object3D, originalModel: any): void
+  setupModelAnimations(
+    model: THREE.Object3D,
+    originalModel: THREE.Object3D | THREE.BufferGeometry | GLTF | null
+  ): void
   updateAnimationList(): void
   setAnimationSpeed(speed: number): void
   updateSelectedAnimation(index: number): void
   toggleAnimation(play?: boolean): void
   update(delta: number): void
+  getAnimationTime(): number
+  getAnimationDuration(): number
+  setAnimationTime(time: number): void
 }
 
 export interface ModelManagerInterface {
@@ -174,26 +203,23 @@ export interface ModelManagerInterface {
   setupModelMaterials(model: THREE.Object3D): void
 }
 
-export interface LoaderManagerInterface {
-  gltfLoader: GLTFLoader
-  objLoader: OBJLoader
-  mtlLoader: MTLLoader
-  fbxLoader: FBXLoader
-  stlLoader: STLLoader
-
-  init(): void
-  dispose(): void
-  loadModel(url: string, originalFileName?: string): Promise<void>
+export interface LoadModelOptions {
+  /**
+   * When true, suppress the user-facing toast for file-not-found
+   * (HTTP 404) errors. Other errors (parse failures, network drops)
+   * still surface a toast. Use for "preview" surfaces whose model
+   * file is server-produced and may legitimately be absent locally
+   * (e.g. shared workflows on a fresh machine).
+   */
+  silentOnNotFound?: boolean
 }
 
-export const SUPPORTED_EXTENSIONS = new Set([
-  '.gltf',
-  '.glb',
-  '.obj',
-  '.fbx',
-  '.stl',
-  '.spz',
-  '.splat',
-  '.ply',
-  '.ksplat'
-])
+export interface LoaderManagerInterface {
+  init(): void
+  dispose(): void
+  loadModel(
+    url: string,
+    originalFileName?: string,
+    options?: LoadModelOptions
+  ): Promise<void>
+}

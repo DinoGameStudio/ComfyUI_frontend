@@ -3,7 +3,7 @@
     <div class="max-w-screen p-2 lg:w-96">
       <!-- Header -->
       <div class="mb-8 flex flex-col gap-4">
-        <h1 class="my-0 text-xl leading-normal font-medium">
+        <h1 class="my-0 text-xl/normal font-medium">
           {{ t('auth.signup.title') }}
         </h1>
         <p class="my-0 text-base">
@@ -22,42 +22,84 @@
         {{ t('auth.login.insecureContextWarning') }}
       </Message>
 
-      <!-- Form -->
-      <Message v-if="userIsInChina" severity="warn" class="mb-4">
-        {{ t('auth.signup.regionRestrictionChina') }}
-      </Message>
-      <SignUpForm v-else :auth-error="authError" @submit="signUpWithEmail" />
-
-      <!-- Divider -->
-      <Divider align="center" layout="horizontal" class="my-8">
-        <span class="text-muted">{{ t('auth.login.orContinueWith') }}</span>
-      </Divider>
-
-      <!-- Social Login Buttons -->
-      <div class="flex flex-col gap-6">
-        <Button
-          type="button"
-          class="h-10 bg-[#2d2e32]"
-          severity="secondary"
-          @click="signInWithGoogle"
+      <template v-if="!showEmailForm">
+        <p
+          v-if="isFreeTierEnabled && !googleSsoBlockedReason"
+          class="mb-4 text-sm text-muted-foreground"
         >
-          <i class="pi pi-google mr-2"></i>
-          {{ t('auth.signup.signUpWithGoogle') }}
-        </Button>
+          {{
+            freeTierCredits
+              ? t('auth.login.freeTierDescription', {
+                  credits: freeTierCredits
+                })
+              : t('auth.login.freeTierDescriptionGeneric')
+          }}
+        </p>
 
-        <Button
-          type="button"
-          class="h-10 bg-[#2d2e32]"
-          severity="secondary"
-          @click="signInWithGithub"
-        >
-          <i class="pi pi-github mr-2"></i>
-          {{ t('auth.signup.signUpWithGithub') }}
-        </Button>
-      </div>
+        <!-- OAuth Buttons (primary) -->
+        <div class="flex flex-col gap-4">
+          <div v-if="!googleSsoBlockedReason" class="relative">
+            <Button type="button" class="h-10 w-full" @click="signInWithGoogle">
+              <i class="pi pi-google mr-2"></i>
+              {{ t('auth.signup.signUpWithGoogle') }}
+            </Button>
+            <span
+              v-if="isFreeTierEnabled"
+              class="absolute -top-2.5 -right-2.5 rounded-full bg-yellow-400 px-2 py-0.5 text-2xs font-bold whitespace-nowrap text-gray-900"
+            >
+              {{ t('auth.login.freeTierBadge') }}
+            </span>
+          </div>
+
+          <Button
+            type="button"
+            class="h-10 bg-charcoal-500"
+            variant="secondary"
+            @click="signInWithGithub"
+          >
+            <i class="pi pi-github mr-2"></i>
+            {{ t('auth.signup.signUpWithGithub') }}
+          </Button>
+        </div>
+
+        <div class="mt-6 text-center">
+          <Button
+            variant="muted-textonly"
+            class="text-sm underline"
+            @click="switchToEmailForm"
+          >
+            {{ t('auth.login.useEmailInstead') }}
+          </Button>
+        </div>
+      </template>
+
+      <template v-else>
+        <Message v-if="isFreeTierEnabled" severity="warn" class="mb-4">
+          {{ t('auth.signup.emailNotEligibleForFreeTier') }}
+        </Message>
+
+        <Message v-if="userIsInChina" severity="warn" class="mb-4">
+          {{ t('auth.signup.regionRestrictionChina') }}
+        </Message>
+        <SignUpForm v-else :auth-error="authError" @submit="signUpWithEmail" />
+
+        <div class="mt-4 text-center">
+          <Button
+            variant="muted-textonly"
+            class="text-sm underline"
+            @click="switchToSocialLogin"
+          >
+            {{
+              googleSsoBlockedReason
+                ? t('auth.login.backToGithubLogin')
+                : t('auth.login.backToSocialLogin')
+            }}
+          </Button>
+        </div>
+      </template>
 
       <!-- Terms & Contact -->
-      <div class="mt-5 text-sm text-gray-600">
+      <p class="mt-5 text-sm text-gray-600">
         {{ t('auth.login.termsText') }}
         <a
           href="https://www.comfy.org/terms-of-service"
@@ -68,55 +110,66 @@
         </a>
         {{ t('auth.login.andText') }}
         <a
-          href="/privacy-policy"
+          href="https://www.comfy.org/privacy-policy"
           target="_blank"
           class="cursor-pointer text-blue-400 no-underline"
         >
           {{ t('auth.login.privacyLink') }} </a
         >.
-        <p class="mt-2">
-          {{ t('cloudWaitlist_questionsText') }}
-          <a
-            href="https://support.comfy.org"
-            class="cursor-pointer text-blue-400 no-underline"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {{ t('cloudWaitlist_contactLink') }}</a
-          >.
-        </p>
-      </div>
+      </p>
+      <p class="mt-2 text-sm text-gray-600">
+        {{ t('cloudWaitlist_questionsText') }}
+        <a
+          href="https://support.comfy.org"
+          class="cursor-pointer text-blue-400 no-underline"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {{ t('cloudWaitlist_contactLink') }}</a
+        >.
+      </p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import Button from 'primevue/button'
-import Divider from 'primevue/divider'
 import Message from 'primevue/message'
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
 import SignUpForm from '@/components/dialog/content/signin/SignUpForm.vue'
-import { useFirebaseAuthActions } from '@/composables/auth/useFirebaseAuthActions'
+import Button from '@/components/ui/button/Button.vue'
+import { useAuthActions } from '@/composables/auth/useAuthActions'
+import { useFreeTierOnboarding } from '@/platform/cloud/onboarding/composables/useFreeTierOnboarding'
+import { getSafePreviousFullPath } from '@/platform/cloud/onboarding/utils/previousFullPath'
 import { isCloud } from '@/platform/distribution/types'
 import { useTelemetry } from '@/platform/telemetry'
 import { useToastStore } from '@/platform/updates/common/toastStore'
 import type { SignUpData } from '@/schemas/signInSchema'
 import { isInChina } from '@/utils/networkUtil'
+import { getGoogleSsoBlockedReason } from '@/base/webviewDetection'
 
 const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
-const authActions = useFirebaseAuthActions()
-const isSecureContext = window.isSecureContext
+const authActions = useAuthActions()
+const isSecureContext = globalThis.isSecureContext
 const authError = ref('')
 const userIsInChina = ref(false)
 const toastStore = useToastStore()
+const telemetry = useTelemetry()
+const {
+  showEmailForm,
+  freeTierCredits,
+  isFreeTierEnabled,
+  switchToEmailForm,
+  switchToSocialLogin
+} = useFreeTierOnboarding()
+const googleSsoBlockedReason = getGoogleSsoBlockedReason()
 
-const navigateToLogin = () => {
-  void router.push({ name: 'cloud-login', query: route.query })
+const navigateToLogin = async () => {
+  await router.push({ name: 'cloud-login', query: route.query })
 }
 
 const onSuccess = async () => {
@@ -125,20 +178,27 @@ const onSuccess = async () => {
     summary: 'Sign up Completed',
     life: 2000
   })
-  // Direct redirect to main app - email verification removed
+
+  const previousFullPath = getSafePreviousFullPath(route.query)
+  if (previousFullPath) {
+    await router.replace(previousFullPath)
+    return
+  }
+
+  // Default redirect to the normal onboarding flow
   await router.push({ path: '/', query: route.query })
 }
 
 const signInWithGoogle = async () => {
   authError.value = ''
-  if (await authActions.signInWithGoogle()) {
+  if (await authActions.signInWithGoogle({ isNewUser: true })) {
     await onSuccess()
   }
 }
 
 const signInWithGithub = async () => {
   authError.value = ''
-  if (await authActions.signInWithGithub()) {
+  if (await authActions.signInWithGithub({ isNewUser: true })) {
     await onSuccess()
   }
 }
@@ -153,7 +213,7 @@ const signUpWithEmail = async (values: SignUpData) => {
 onMounted(async () => {
   // Track signup screen opened
   if (isCloud) {
-    useTelemetry()?.trackSignupOpened()
+    telemetry?.trackSignupOpened()
   }
 
   userIsInChina.value = await isInChina()

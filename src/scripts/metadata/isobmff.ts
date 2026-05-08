@@ -72,7 +72,11 @@ const findIsobmffBoxByType = (
   return null
 }
 
-const extractJson = (data: Uint8Array, start: number, end: number): any => {
+const extractJson = (
+  data: Uint8Array,
+  start: number,
+  end: number
+): ComfyWorkflowJSON | ComfyApiWorkflow | null => {
   let jsonStart = start
   while (jsonStart < end && data[jsonStart] !== ASCII.OPEN_BRACE) {
     jsonStart++
@@ -133,7 +137,7 @@ const extractMetadataValueFromDataBox = (
     lowerKeyName === ComfyMetadataTags.PROMPT.toLowerCase() ||
     lowerKeyName === ComfyMetadataTags.WORKFLOW.toLowerCase()
   ) {
-    return extractJson(data, valueStart, dataBoxEnd) || null
+    return extractJson(data, valueStart, dataBoxEnd)
   }
   return null
 }
@@ -270,6 +274,7 @@ export function getFromIsobmffFile(file: File): Promise<ComfyMetadata> {
       console.error('FileReader: Error reading ISOBMFF file:', err)
       resolve({})
     }
+    reader.onabort = () => resolve({})
     reader.readAsArrayBuffer(file.slice(0, MAX_READ_BYTES))
   })
 }

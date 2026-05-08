@@ -1,14 +1,23 @@
-# Automated bi-weekly workflow to bump ComfyUI frontend RC releases
-name: "Release: Bi-weekly ComfyUI"
+# Release workflow for ComfyUI frontend: version bump → PyPI publish → ComfyUI PR.
+# Runs on a bi-weekly schedule for minor releases, or manually for patch/hotfix releases.
+name: 'Release: ComfyUI'
 
 on:
-  # Schedule for Monday at 12:00 PM PST (20:00 UTC)
+  # Bi-weekly schedule: Monday at 20:00 UTC
   schedule:
     - cron: '0 20 * * 1'
 
-  # Allow manual triggering (bypasses bi-weekly check)
+  # Manual trigger for both on-demand minor and patch/hotfix releases
   workflow_dispatch:
     inputs:
+      release_type:
+        description: 'minor = next minor version (bi-weekly cadence), patch = hotfix for current production version'
+        required: true
+        default: 'minor'
+        type: choice
+        options:
+          - minor
+          - patch
       comfyui_fork:
         description: 'ComfyUI fork to use for PR (e.g., Comfy-Org/ComfyUI)'
         required: false
@@ -41,10 +50,11 @@ jobs:
 
       - name: Summary
         run: |
-          echo "## Bi-weekly Check" >> $GITHUB_STEP_SUMMARY
+          echo "## Release Check" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- Is release week: ${{ steps.check.outputs.is_release_week }}" >> $GITHUB_STEP_SUMMARY
           echo "- Manual trigger: ${{ github.event_name == 'workflow_dispatch' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Release type: ${{ inputs.release_type || 'minor (scheduled)' }}" >> $GITHUB_STEP_SUMMARY
 
   resolve-version:
     needs: check-release-week
@@ -61,28 +71,28 @@ jobs:
 
     steps:
       - name: Checkout ComfyUI_frontend
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           path: frontend
 
       - name: Checkout ComfyUI (sparse)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
-          repository: comfyanonymous/ComfyUI
+          repository: Comfy-Org/ComfyUI
           sparse-checkout: |
             requirements.txt
           path: comfyui
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
-          version: 10
+          package_json_file: frontend/package.json
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version-file: 'frontend/.nvmrc'
 
       - name: Install dependencies
         working-directory: frontend
@@ -91,6 +101,8 @@ jobs:
       - name: Resolve release information
         id: resolve
         working-directory: frontend
+        env:
+          RELEASE_TYPE: ${{ inputs.release_type || 'minor' }}
         run: |
           set -euo pipefail
 
@@ -162,14 +174,135 @@ jobs:
           echo "- Target version: ${{ needs.resolve-version.outputs.target_version }}" >> $GITHUB_STEP_SUMMARY
           echo "- [View workflow runs](https://github.com/Comfy-Org/ComfyUI_frontend/actions/workflows/release-version-bump.yaml)" >> $GITHUB_STEP_SUMMARY
 
+  publish-pypi:
+    needs: [resolve-version, trigger-release-if-needed]
+    if: >
+      always() &&
+      needs.resolve-version.result == 'success' &&
+      (needs.trigger-release-if-needed.result == 'success' ||
+       needs.trigger-release-if-needed.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for release PR to be created and merged
+        if: needs.trigger-release-if-needed.result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.PR_GH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          TARGET_VERSION="${{ needs.resolve-version.outputs.target_version }}"
+          TARGET_BRANCH="${{ needs.resolve-version.outputs.target_branch }}"
+          echo "Waiting for version bump PR for v${TARGET_VERSION} on ${TARGET_BRANCH} to be merged..."
+
+          # Poll for up to 30 minutes (a human or automation needs to merge the version bump PR)
+          for i in $(seq 1 60); do
+            # Check if the tag exists (release-draft-create creates a tag on merge)
+            if gh api "repos/Comfy-Org/ComfyUI_frontend/git/ref/tags/v${TARGET_VERSION}" --silent 2>/dev/null; then
+              echo "✅ Tag v${TARGET_VERSION} found — release PR has been merged"
+              exit 0
+            fi
+            echo "Attempt $i/60: Tag v${TARGET_VERSION} not found yet, waiting 30s..."
+            sleep 30
+          done
+
+          echo "❌ Timed out waiting for tag v${TARGET_VERSION}"
+          exit 1
+
+      - name: Checkout code at target version
+        uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.resolve-version.outputs.target_version }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Build project
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          ALGOLIA_APP_ID: ${{ secrets.ALGOLIA_APP_ID }}
+          ALGOLIA_API_KEY: ${{ secrets.ALGOLIA_API_KEY }}
+          ENABLE_MINIFY: 'true'
+          USE_PROD_CONFIG: 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Install build dependencies
+        run: python -m pip install build
+
+      - name: Build and publish PyPI package
+        run: |
+          set -euo pipefail
+          mkdir -p comfyui_frontend_package/comfyui_frontend_package/static/
+          cp -r dist/* comfyui_frontend_package/comfyui_frontend_package/static/
+
+      - name: Build pypi package
+        run: python -m build
+        working-directory: comfyui_frontend_package
+        env:
+          COMFYUI_FRONTEND_VERSION: ${{ needs.resolve-version.outputs.target_version }}
+
+      - name: Publish pypi package
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+        with:
+          skip-existing: true
+          password: ${{ secrets.PYPI_TOKEN }}
+          packages-dir: comfyui_frontend_package/dist
+
+      - name: Wait for PyPI propagation
+        run: |
+          set -euo pipefail
+
+          TARGET_VERSION="${{ needs.resolve-version.outputs.target_version }}"
+          PACKAGE="comfyui-frontend-package"
+          echo "Waiting for ${PACKAGE}==${TARGET_VERSION} to be available on PyPI..."
+
+          # Wait up to 15 minutes (polling every 30 seconds)
+          for i in $(seq 1 30); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/${PACKAGE}/${TARGET_VERSION}/json")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ ${PACKAGE}==${TARGET_VERSION} is available on PyPI"
+              exit 0
+            fi
+            echo "Attempt $i/30: PyPI returned HTTP ${HTTP_CODE}, waiting 30s..."
+            sleep 30
+          done
+
+          echo "❌ Timed out waiting for ${PACKAGE}==${TARGET_VERSION} on PyPI"
+          exit 1
+
+      - name: Summary
+        run: |
+          echo "## PyPI Publishing" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Package: comfyui-frontend-package" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: ${{ needs.resolve-version.outputs.target_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ✅ Published and confirmed available" >> $GITHUB_STEP_SUMMARY
+
   create-comfyui-pr:
-    needs: [check-release-week, resolve-version, trigger-release-if-needed]
-    if: always() && needs.resolve-version.result == 'success' && (needs.check-release-week.outputs.is_release_week == 'true' || github.event_name == 'workflow_dispatch')
+    needs:
+      [
+        check-release-week,
+        resolve-version,
+        trigger-release-if-needed,
+        publish-pypi
+      ]
+    if: always() && needs.resolve-version.result == 'success' && needs.publish-pypi.result == 'success' && (needs.check-release-week.outputs.is_release_week == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout ComfyUI fork
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: ${{ inputs.comfyui_fork || 'Comfy-Org/ComfyUI' }}
           token: ${{ secrets.PR_GH_TOKEN }}
@@ -184,7 +317,7 @@ jobs:
           # Note: This only affects the local checkout, NOT the fork's master branch
           # We only push the automation branch, leaving the fork's master untouched
           echo "Fetching upstream master..."
-          if ! git fetch https://github.com/comfyanonymous/ComfyUI.git master; then
+          if ! git fetch https://github.com/Comfy-Org/ComfyUI.git master; then
             echo "Failed to fetch upstream master"
             exit 1
           fi
@@ -236,11 +369,8 @@ jobs:
           EOF
           )
 
-          # Add release PR note if release was triggered
-          if [ "${{ needs.resolve-version.outputs.needs_release }}" = "true" ]; then
-            RELEASE_NOTE="⚠️ **Release PR must be merged first** - check [release workflow runs](https://github.com/Comfy-Org/ComfyUI_frontend/actions/workflows/release-version-bump.yaml)"
-            BODY=$''"${RELEASE_NOTE}"$'\n\n'"${BODY}"
-          fi
+          PYPI_NOTE="✅ **PyPI package confirmed available** — \`comfyui-frontend-package==${{ needs.resolve-version.outputs.target_version }}\` has been published and verified."
+          BODY=$''"${PYPI_NOTE}"$'\n\n'"${BODY}"
 
           # Save to file for later use
           printf '%s\n' "$BODY" > pr-body.txt
@@ -257,7 +387,7 @@ jobs:
           # Extract fork owner from repository name
           FORK_OWNER=$(echo "$COMFYUI_FORK" | cut -d'/' -f1)
 
-          echo "Creating PR from ${COMFYUI_FORK} to comfyanonymous/ComfyUI"
+          echo "Creating PR from ${COMFYUI_FORK} to Comfy-Org/ComfyUI"
 
           # Configure git
           git config user.name "github-actions[bot]"
@@ -288,7 +418,7 @@ jobs:
 
           # Try to create PR, ignore error if it already exists
           if ! gh pr create \
-            --repo comfyanonymous/ComfyUI \
+            --repo Comfy-Org/ComfyUI \
             --head "${FORK_OWNER}:${BRANCH}" \
             --base master \
             --title "Bump comfyui-frontend-package to ${{ needs.resolve-version.outputs.target_version }}" \
@@ -297,7 +427,7 @@ jobs:
 
             # Check if PR already exists
             set +e
-            EXISTING_PR=$(gh pr list --repo comfyanonymous/ComfyUI --head "${FORK_OWNER}:${BRANCH}" --json number --jq '.[0].number' 2>&1)
+            EXISTING_PR=$(gh pr list --repo Comfy-Org/ComfyUI --head "${FORK_OWNER}:${BRANCH}" --json number --jq '.[0].number' 2>&1)
             PR_LIST_EXIT=$?
             set -e
 
@@ -307,7 +437,11 @@ jobs:
             fi
 
             if [ -n "$EXISTING_PR" ] && [ "$EXISTING_PR" != "null" ]; then
-              echo "PR already exists (#${EXISTING_PR}), updating branch will update the PR"
+              echo "PR already exists (#${EXISTING_PR}), refreshing title/body"
+              gh pr edit "$EXISTING_PR" \
+                --repo Comfy-Org/ComfyUI \
+                --title "Bump comfyui-frontend-package to ${{ needs.resolve-version.outputs.target_version }}" \
+                --body-file ../pr-body.txt
             else
               echo "Failed to create PR and no existing PR found"
               exit 1
@@ -318,7 +452,7 @@ jobs:
         run: |
           echo "## ComfyUI PR Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Draft PR created in comfyanonymous/ComfyUI" >> $GITHUB_STEP_SUMMARY
+          echo "Draft PR created in Comfy-Org/ComfyUI" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### PR Body:" >> $GITHUB_STEP_SUMMARY
           cat pr-body.txt >> $GITHUB_STEP_SUMMARY

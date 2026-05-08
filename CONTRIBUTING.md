@@ -17,19 +17,21 @@ Have another idea? Drop into Discord or open an issue, and let's chat!
 ### Prerequisites & Technology Stack
 
 - **Required Software**:
-  - Node.js (v24) and pnpm
+  - Node.js (see `.nvmrc` for the required version) and pnpm
   - Git for version control
   - A running ComfyUI backend instance (otherwise, you can use `pnpm dev:cloud`)
 
 ### Initial Setup
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/Comfy-Org/ComfyUI_frontend.git
    cd ComfyUI_frontend
    ```
 
 2. Install dependencies:
+
    ```bash
    pnpm install
    ```
@@ -60,6 +62,37 @@ python main.py --port 8188 --cpu
 - Run `pnpm dev:electron` to start the dev server with electron API mocked
 - Run `pnpm dev:cloud` to start the dev server against the cloud backend (instead of local ComfyUI server)
 
+#### Testing with Cloud & Staging Environments
+
+Some features — particularly **partner/API nodes** (e.g. BFL, OpenAI, Stability AI) — require a cloud backend for authentication and billing. Running these against a local ComfyUI instance will result in permission errors or logged-out states. There are two ways to connect to a cloud/staging backend:
+
+**Option 1: Frontend — `pnpm dev:cloud`**
+
+The simplest approach. This proxies all API requests to the test cloud environment:
+
+```bash
+pnpm dev:cloud
+```
+
+This sets `DEV_SERVER_COMFYUI_URL` to `https://testcloud.comfy.org/` automatically. You can also set this variable manually in your `.env` file to target a different environment:
+
+```bash
+# .env
+DEV_SERVER_COMFYUI_URL=https://stagingcloud.comfy.org/
+```
+
+Any `*.comfy.org` URL automatically enables cloud mode, which includes the GCS media proxy needed for viewing generated images and videos. See [.env_example](.env_example) for all available cloud URLs.
+
+**Option 2: Backend — `--comfy-api-base`**
+
+Alternatively, launch the ComfyUI backend pointed at the staging API:
+
+```bash
+python main.py --comfy-api-base https://stagingapi.comfy.org --verbose
+```
+
+Then run `pnpm dev` as usual. This keeps the frontend in local mode but routes backend API calls through staging.
+
 #### Access dev server on touch devices
 
 Enable remote access to the dev server by setting `VITE_REMOTE_DEV` in `.env` to `true`.
@@ -83,8 +116,11 @@ Make sure your desktop machine and touch device are on the same network. On your
 navigate to `http://<server_ip>:5173` (e.g. `http://192.168.2.20:5173` here), to access the ComfyUI frontend.
 
 > ⚠️ IMPORTANT:
-The dev server will NOT load JavaScript extensions from custom nodes. Only core extensions (built into the frontend) will be loaded. This is because the shim system that allows custom node JavaScript to import frontend modules only works in production builds. Python custom nodes still function normally. See [Extension Development Guide](docs/extensions/development.md) for details and workarounds. And See [Extension Overview](docs/extensions/README.md) for extensions overview.
+> The dev server will NOT load JavaScript extensions from custom nodes. Only core extensions (built into the frontend) will be loaded. This is because the shim system that allows custom node JavaScript to import frontend modules only works in production builds. Python custom nodes still function normally. See [Extension Development Guide](docs/extensions/development.md) for details and workarounds. And See [Extension Overview](docs/extensions/README.md) for extensions overview.
 
+## Troubleshooting
+
+If you run into issues during development (e.g. `pnpm dev` hanging, TypeScript errors after pulling, lock file conflicts), see [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common fixes.
 
 ## Development Workflow
 
@@ -109,7 +145,6 @@ When you fix a bug that affects a version in feature freeze, we use an automated
 2. Before merging, add these labels to your PR:
    - `needs-backport` - triggers the automated backport workflow
    - `core/1.24` - targets the `core/1.24` release candidate branch
-   
 3. Merge your PR normally
 4. The automated workflow will:
    - Create a new branch from `core/1.24`
@@ -127,6 +162,7 @@ When you fix a bug that affects a version in feature freeze, we use an automated
 #### Handling Conflicts
 
 If the automated cherry-pick fails due to conflicts, the workflow will comment on your PR with:
+
 - The list of conflicting files
 - Instructions to manually cherry-pick to the release candidate branch
 
@@ -200,7 +236,7 @@ The project supports three types of icons, all with automatic imports (no manual
 2. **Iconify Icons** - 200,000+ icons from various libraries: `<i class="icon-[lucide--settings]" />`, `<i class="icon-[mdi--folder]" />`
 3. **Custom Icons** - Your own SVG icons: `<i-comfy:workflow />`
 
-Icons are powered by the unplugin-icons system, which automatically discovers and imports icons as Vue components. Custom icons are stored in `packages/design-system/src/icons/` and processed by `packages/design-system/src/iconCollection.ts` with automatic validation.
+Icons are powered by the unplugin-icons system, which automatically discovers and imports icons as Vue components. Tailwind CSS icon classes (`icon-[comfy--template]`) are provided by `@iconify/tailwind4`, configured in `packages/design-system/src/css/style.css`. Custom icons are stored in `packages/design-system/src/icons/` and loaded via `from-folder` at build time.
 
 For detailed instructions and code examples, see [packages/design-system/src/icons/README.md](packages/design-system/src/icons/README.md).
 
@@ -241,6 +277,7 @@ The original litegraph repository (https://github.com/Comfy-Org/litegraph.js) is
 ## Questions?
 
 If you have questions about contributing:
+
 - Check existing issues and discussions
 - Ask in our [Discord](https://discord.com/invite/comfyorg)
 - Open a new issue for clarification

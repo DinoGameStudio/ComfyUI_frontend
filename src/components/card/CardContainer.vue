@@ -8,7 +8,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { cn } from '@/utils/tailwindUtil'
+import { cn } from '@comfyorg/tailwind-utils'
 
 const {
   size = 'regular',
@@ -59,7 +59,7 @@ const containerClasses = computed(() => {
     outline: cn(
       hasBorder && 'border-2 border-border-subtle',
       hasCursor && 'cursor-pointer',
-      'hover:border-border-subtle/50 transition-colors'
+      'transition-colors hover:border-border-subtle/50'
     )
   }
 

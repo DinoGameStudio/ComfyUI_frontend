@@ -1,16 +1,19 @@
 import {
   comfyExpect as expect,
   comfyPageFixture as test
-} from '../fixtures/ComfyPage'
-import { fitToViewInstant } from '../helpers/fitToView'
+} from '@e2e/fixtures/ComfyPage'
+import type { ComfyPage } from '@e2e/fixtures/ComfyPage'
+import { fitToViewInstant } from '@e2e/fixtures/utils/fitToView'
+import type { WorkspaceStore } from '@e2e/types/globals'
+import type { NodeReference } from '@e2e/fixtures/utils/litegraphUtils'
 
 // TODO: there might be a better solution for this
 // Helper function to pan canvas and select node
-async function selectNodeWithPan(comfyPage: any, nodeRef: any) {
+async function selectNodeWithPan(comfyPage: ComfyPage, nodeRef: NodeReference) {
   const nodePos = await nodeRef.getPosition()
 
   await comfyPage.page.evaluate((pos) => {
-    const app = window['app']
+    const app = window.app!
     const canvas = app.canvas
     canvas.ds.offset[0] = -pos.x + canvas.canvas.width / 2
     canvas.ds.offset[1] = -pos.y + canvas.canvas.height / 2 + 100
@@ -21,20 +24,81 @@ async function selectNodeWithPan(comfyPage: any, nodeRef: any) {
   await nodeRef.click('title')
 }
 
-test.describe('Node Help', () => {
+async function openSelectionToolboxHelp(comfyPage: ComfyPage) {
+  await expect(comfyPage.selectionToolbox).toBeVisible()
+
+  const helpButton = comfyPage.selectionToolbox.getByTestId('info-button')
+  await expect(helpButton).toBeVisible()
+  await helpButton.click()
+  await comfyPage.nextFrame()
+
+  return comfyPage.page.getByTestId('properties-panel')
+}
+
+async function setLocaleAndWaitForWorkflowReload(
+  comfyPage: ComfyPage,
+  locale: string
+) {
+  await comfyPage.page.evaluate(async (targetLocale) => {
+    const workflow = (window.app!.extensionManager as WorkspaceStore).workflow
+      .activeWorkflow
+
+    if (!workflow) {
+      throw new Error('No active workflow while waiting for locale reload')
+    }
+
+    const changeTracker = workflow.changeTracker.constructor as unknown as {
+      isLoadingGraph: boolean
+    }
+
+    let sawLoading = false
+    const waitForReload = new Promise<void>((resolve, reject) => {
+      const timeoutAt = performance.now() + 5000
+
+      const tick = () => {
+        if (changeTracker.isLoadingGraph) {
+          sawLoading = true
+        }
+
+        if (sawLoading && !changeTracker.isLoadingGraph) {
+          resolve()
+          return
+        }
+
+        if (performance.now() > timeoutAt) {
+          reject(
+            new Error(
+              `Timed out waiting for workflow reload after setting locale to ${targetLocale}`
+            )
+          )
+          return
+        }
+
+        requestAnimationFrame(tick)
+      }
+
+      tick()
+    })
+
+    await window.app!.extensionManager.setting.set('Comfy.Locale', targetLocale)
+    await waitForReload
+  }, locale)
+}
+
+test.describe('Node Help', { tag: ['@slow', '@ui'] }, () => {
   test.beforeEach(async ({ comfyPage }) => {
-    await comfyPage.setup()
-    await comfyPage.setSetting('Comfy.UseNewMenu', 'Top')
+    await comfyPage.settings.setSetting('Comfy.NodeLibrary.NewDesign', false)
   })
 
   test.describe('Selection Toolbox', () => {
     test('Should open help menu for selected node', async ({ comfyPage }) => {
       // Load a workflow with a node
-      await comfyPage.setSetting('Comfy.Canvas.SelectionToolbox', true)
-      await comfyPage.loadWorkflow('default')
+      await comfyPage.settings.setSetting('Comfy.Canvas.SelectionToolbox', true)
+      await comfyPage.workflow.loadWorkflow('default')
 
       // Select a single node (KSampler) using node references
-      const ksamplerNodes = await comfyPage.getNodeRefsByType('KSampler')
+      const ksamplerNodes =
+        await comfyPage.nodeOps.getNodeRefsByType('KSampler')
       if (ksamplerNodes.length === 0) {
         throw new Error('No KSampler nodes found in the workflow')
       }
@@ -42,20 +106,8 @@ test.describe('Node Help', () => {
       // Select the node with panning to ensure toolbox is visible
       await selectNodeWithPan(comfyPage, ksamplerNodes[0])
 
-      // Wait for selection toolbox to appear
-      await expect(comfyPage.selectionToolbox).toBeVisible()
-
-      // Click the help button in the selection toolbox
-      const helpButton = comfyPage.selectionToolbox.locator(
-        'button[data-testid="info-button"]'
-      )
-      await expect(helpButton).toBeVisible()
-      await helpButton.click()
-
       // Verify that the help page is shown for the correct node
-      const helpPage = comfyPage.page.locator(
-        '[data-testid="properties-panel"]'
-      )
+      const helpPage = await openSelectionToolboxHelp(comfyPage)
       await expect(helpPage).toContainText('KSampler')
       await expect(helpPage.locator('.node-help-content')).toBeVisible()
     })
@@ -85,7 +137,9 @@ test.describe('Node Help', () => {
       await ksamplerNode.hover()
 
       // Click the help button
-      const helpButton = ksamplerNode.locator('button:has(.pi-question)')
+      const helpButton = ksamplerNode.getByRole('button', {
+        name: /learn more/i
+      })
       await expect(helpButton).toBeVisible()
       await helpButton.click()
 
@@ -115,7 +169,9 @@ test.describe('Node Help', () => {
         .filter({ hasText: 'KSampler' })
         .first()
       await ksamplerNode.hover()
-      const helpButton = ksamplerNode.locator('button:has(.pi-question)')
+      const helpButton = ksamplerNode.getByRole('button', {
+        name: /learn more/i
+      })
       await helpButton.click()
 
       // Verify help page is shown
@@ -123,8 +179,7 @@ test.describe('Node Help', () => {
       await expect(helpPage).toContainText('KSampler')
 
       // Click the back button - use a more specific selector
-      const backButton = comfyPage.page.locator('button:has(.pi-arrow-left)')
-      await expect(backButton).toBeVisible()
+      const backButton = helpPage.getByRole('button', { name: /back/i })
       await backButton.click()
 
       // Verify that we're back to the node library view
@@ -134,13 +189,13 @@ test.describe('Node Help', () => {
       ).toBeVisible()
 
       // Verify help page is no longer visible
-      await expect(helpPage.locator('.node-help-content')).not.toBeVisible()
+      await expect(helpPage.locator('.node-help-content')).toBeHidden()
     })
   })
 
   test.describe('Help Content', () => {
     test.beforeEach(async ({ comfyPage }) => {
-      await comfyPage.setSetting('Comfy.Canvas.SelectionToolbox', true)
+      await comfyPage.settings.setSetting('Comfy.Canvas.SelectionToolbox', true)
     })
 
     test('Should display loading state while fetching help', async ({
@@ -156,20 +211,13 @@ test.describe('Node Help', () => {
       })
 
       // Load workflow and select a node
-      await comfyPage.loadWorkflow('default')
-      const ksamplerNodes = await comfyPage.getNodeRefsByType('KSampler')
+      await comfyPage.workflow.loadWorkflow('default')
+      const ksamplerNodes =
+        await comfyPage.nodeOps.getNodeRefsByType('KSampler')
       await selectNodeWithPan(comfyPage, ksamplerNodes[0])
 
-      // Click help button
-      const helpButton = comfyPage.page.locator(
-        '.selection-toolbox button[data-testid="info-button"]'
-      )
-      await helpButton.click()
-
       // Verify loading spinner is shown
-      const helpPage = comfyPage.page.locator(
-        '[data-testid="properties-panel"]'
-      )
+      const helpPage = await openSelectionToolboxHelp(comfyPage)
       await expect(helpPage.locator('.p-progressspinner')).toBeVisible()
 
       // Wait for content to load
@@ -188,20 +236,13 @@ test.describe('Node Help', () => {
       })
 
       // Load workflow and select a node
-      await comfyPage.loadWorkflow('default')
-      const ksamplerNodes = await comfyPage.getNodeRefsByType('KSampler')
+      await comfyPage.workflow.loadWorkflow('default')
+      const ksamplerNodes =
+        await comfyPage.nodeOps.getNodeRefsByType('KSampler')
       await selectNodeWithPan(comfyPage, ksamplerNodes[0])
 
-      // Click help button
-      const helpButton = comfyPage.page.locator(
-        '.selection-toolbox button[data-testid="info-button"]'
-      )
-      await helpButton.click()
-
       // Verify fallback content is shown (description, inputs, outputs)
-      const helpPage = comfyPage.page.locator(
-        '[data-testid="properties-panel"]'
-      )
+      const helpPage = await openSelectionToolboxHelp(comfyPage)
       await expect(helpPage).toContainText('Description')
       await expect(helpPage).toContainText('Inputs')
       await expect(helpPage).toContainText('Outputs')
@@ -225,18 +266,12 @@ test.describe('Node Help', () => {
         })
       })
 
-      await comfyPage.loadWorkflow('default')
-      const ksamplerNodes = await comfyPage.getNodeRefsByType('KSampler')
+      await comfyPage.workflow.loadWorkflow('default')
+      const ksamplerNodes =
+        await comfyPage.nodeOps.getNodeRefsByType('KSampler')
       await selectNodeWithPan(comfyPage, ksamplerNodes[0])
 
-      const helpButton = comfyPage.page.locator(
-        '.selection-toolbox button[data-testid="info-button"]'
-      )
-      await helpButton.click()
-
-      const helpPage = comfyPage.page.locator(
-        '[data-testid="properties-panel"]'
-      )
+      const helpPage = await openSelectionToolboxHelp(comfyPage)
       await expect(helpPage).toContainText('KSampler Documentation')
 
       // Check that relative image paths are prefixed correctly
@@ -275,18 +310,12 @@ test.describe('Node Help', () => {
         })
       })
 
-      await comfyPage.loadWorkflow('default')
-      const ksamplerNodes = await comfyPage.getNodeRefsByType('KSampler')
+      await comfyPage.workflow.loadWorkflow('default')
+      const ksamplerNodes =
+        await comfyPage.nodeOps.getNodeRefsByType('KSampler')
       await selectNodeWithPan(comfyPage, ksamplerNodes[0])
 
-      const helpButton = comfyPage.page.locator(
-        '.selection-toolbox button[data-testid="info-button"]'
-      )
-      await helpButton.click()
-
-      const helpPage = comfyPage.page.locator(
-        '[data-testid="properties-panel"]'
-      )
+      const helpPage = await openSelectionToolboxHelp(comfyPage)
 
       // Check relative video paths are prefixed
       const relativeVideo = helpPage.locator('video[src*="demo.mp4"]')
@@ -322,7 +351,7 @@ test.describe('Node Help', () => {
       comfyPage
     }) => {
       // First load workflow with custom node
-      await comfyPage.loadWorkflow('groupnodes/group_node_v1.3.3')
+      await comfyPage.workflow.loadWorkflow('groupnodes/group_node_v1.3.3')
 
       // Mock custom node documentation with fallback
       await comfyPage.page.route(
@@ -346,22 +375,16 @@ This is documentation for a custom node.
 
       // Find and select a custom/group node
       const nodeRefs = await comfyPage.page.evaluate(() => {
-        return window['app'].graph.nodes.map((n: any) => n.id)
+        return window.app!.graph!.nodes.map((n) => n.id)
       })
       if (nodeRefs.length > 0) {
-        const firstNode = await comfyPage.getNodeRefById(nodeRefs[0])
+        const firstNode = await comfyPage.nodeOps.getNodeRefById(nodeRefs[0])
         await selectNodeWithPan(comfyPage, firstNode)
       }
 
-      const helpButton = comfyPage.page.locator(
-        '.selection-toolbox button[data-testid="info-button"]'
-      )
+      const helpButton = comfyPage.selectionToolbox.getByTestId('info-button')
       if (await helpButton.isVisible()) {
-        await helpButton.click()
-
-        const helpPage = comfyPage.page.locator(
-          '[data-testid="properties-panel"]'
-        )
+        const helpPage = await openSelectionToolboxHelp(comfyPage)
         await expect(helpPage).toContainText('Custom Node Documentation')
 
         // Check image path for custom nodes
@@ -392,18 +415,12 @@ This is documentation for a custom node.
         })
       })
 
-      await comfyPage.loadWorkflow('default')
-      const ksamplerNodes = await comfyPage.getNodeRefsByType('KSampler')
+      await comfyPage.workflow.loadWorkflow('default')
+      const ksamplerNodes =
+        await comfyPage.nodeOps.getNodeRefsByType('KSampler')
       await selectNodeWithPan(comfyPage, ksamplerNodes[0])
 
-      const helpButton = comfyPage.page.locator(
-        '.selection-toolbox button[data-testid="info-button"]'
-      )
-      await helpButton.click()
-
-      const helpPage = comfyPage.page.locator(
-        '[data-testid="properties-panel"]'
-      )
+      const helpPage = await openSelectionToolboxHelp(comfyPage)
 
       // Dangerous elements should be removed
       await expect(helpPage.locator('script')).toHaveCount(0)
@@ -414,8 +431,7 @@ This is documentation for a custom node.
       const imageCount = await images.count()
       for (let i = 0; i < imageCount; i++) {
         const img = images.nth(i)
-        const onError = await img.getAttribute('onerror')
-        expect(onError).toBeNull()
+        await expect(img).not.toHaveAttribute('onerror')
       }
 
       // Check that javascript: links are sanitized
@@ -423,10 +439,7 @@ This is documentation for a custom node.
       const linkCount = await links.count()
       for (let i = 0; i < linkCount; i++) {
         const link = links.nth(i)
-        const href = await link.getAttribute('href')
-        if (href !== null) {
-          expect(href).not.toContain('javascript:')
-        }
+        await expect(link).not.toHaveAttribute('href', /^javascript:/i)
       }
 
       // Safe content should remain
@@ -459,25 +472,20 @@ This is English documentation.
       })
 
       // Set locale to Japanese
-      await comfyPage.setSetting('Comfy.Locale', 'ja')
+      await setLocaleAndWaitForWorkflowReload(comfyPage, 'ja')
 
-      await comfyPage.loadWorkflow('default')
-      const ksamplerNodes = await comfyPage.getNodeRefsByType('KSampler')
-      await selectNodeWithPan(comfyPage, ksamplerNodes[0])
+      try {
+        await comfyPage.workflow.loadWorkflow('default')
+        const ksamplerNodes =
+          await comfyPage.nodeOps.getNodeRefsByType('KSampler')
+        await selectNodeWithPan(comfyPage, ksamplerNodes[0])
 
-      const helpButton = comfyPage.page.locator(
-        '.selection-toolbox button[data-testid="info-button"]'
-      )
-      await helpButton.click()
-
-      const helpPage = comfyPage.page.locator(
-        '[data-testid="properties-panel"]'
-      )
-      await expect(helpPage).toContainText('KSamplerノード')
-      await expect(helpPage).toContainText('これは日本語のドキュメントです')
-
-      // Reset locale
-      await comfyPage.setSetting('Comfy.Locale', 'en')
+        const helpPage = await openSelectionToolboxHelp(comfyPage)
+        await expect(helpPage).toContainText('KSamplerノード')
+        await expect(helpPage).toContainText('これは日本語のドキュメントです')
+      } finally {
+        await setLocaleAndWaitForWorkflowReload(comfyPage, 'en')
+      }
     })
 
     test('Should handle network errors gracefully', async ({ comfyPage }) => {
@@ -486,26 +494,19 @@ This is English documentation.
         await route.abort('failed')
       })
 
-      await comfyPage.loadWorkflow('default')
-      const ksamplerNodes = await comfyPage.getNodeRefsByType('KSampler')
+      await comfyPage.workflow.loadWorkflow('default')
+      const ksamplerNodes =
+        await comfyPage.nodeOps.getNodeRefsByType('KSampler')
       await selectNodeWithPan(comfyPage, ksamplerNodes[0])
 
-      const helpButton = comfyPage.page.locator(
-        '.selection-toolbox button[data-testid="info-button"]'
-      )
-      await helpButton.click()
-
-      const helpPage = comfyPage.page.locator(
-        '[data-testid="properties-panel"]'
-      )
+      const helpPage = await openSelectionToolboxHelp(comfyPage)
 
       // Should show fallback content (node description)
       await expect(helpPage).toBeVisible()
-      await expect(helpPage.locator('.p-progressspinner')).not.toBeVisible()
+      await expect(helpPage.locator('.p-progressspinner')).toBeHidden()
 
       // Should show some content even on error
-      const content = await helpPage.textContent()
-      expect(content).toBeTruthy()
+      await expect(helpPage).not.toHaveText('')
     })
 
     test('Should update help content when switching between nodes', async ({
@@ -529,26 +530,20 @@ This is English documentation.
         }
       )
 
-      await comfyPage.loadWorkflow('default')
+      await comfyPage.workflow.loadWorkflow('default')
       await fitToViewInstant(comfyPage)
 
       // Select KSampler first
-      const ksamplerNodes = await comfyPage.getNodeRefsByType('KSampler')
+      const ksamplerNodes =
+        await comfyPage.nodeOps.getNodeRefsByType('KSampler')
       await selectNodeWithPan(comfyPage, ksamplerNodes[0])
 
-      const helpButton = comfyPage.page.locator(
-        '.selection-toolbox button[data-testid="info-button"]'
-      )
-      await helpButton.click()
-
-      const helpPage = comfyPage.page.locator(
-        '[data-testid="properties-panel"]'
-      )
+      const helpPage = await openSelectionToolboxHelp(comfyPage)
       await expect(helpPage).toContainText('KSampler Help')
       await expect(helpPage).toContainText('This is KSampler documentation')
 
       // Now select Checkpoint Loader
-      const checkpointNodes = await comfyPage.getNodeRefsByType(
+      const checkpointNodes = await comfyPage.nodeOps.getNodeRefsByType(
         'CheckpointLoaderSimple'
       )
       await selectNodeWithPan(comfyPage, checkpointNodes[0])

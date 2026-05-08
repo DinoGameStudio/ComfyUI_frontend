@@ -6,7 +6,17 @@ import { createExportMenuItems } from '@/extensions/core/load3d/exportMenuHelper
 import Load3DConfiguration from '@/extensions/core/load3d/Load3DConfiguration'
 import type { LGraphNode } from '@/lib/litegraph/src/LGraphNode'
 import type { IContextMenuValue } from '@/lib/litegraph/src/interfaces'
-import { type CustomInputSpec } from '@/schemas/nodeDef/nodeDefSchemaV2'
+import type { NodeOutputWith, ResultItem } from '@/schemas/apiSchema'
+import type { ComfyNodeDef } from '@/schemas/nodeDefSchema'
+
+type SaveMeshOutput = NodeOutputWith<{
+  '3d'?: ResultItem[]
+}>
+import type { CustomInputSpec } from '@/schemas/nodeDef/nodeDefSchemaV2'
+import {
+  isAssetPreviewSupported,
+  persistThumbnail
+} from '@/platform/assets/utils/assetPreviewUtil'
 import { ComponentWidgetImpl, addWidget } from '@/scripts/domWidget'
 import { useExtensionService } from '@/services/extensionService'
 import { useLoad3dService } from '@/services/load3dService'
@@ -20,7 +30,10 @@ const inputSpec: CustomInputSpec = {
 useExtensionService().registerExtension({
   name: 'Comfy.SaveGLB',
 
-  async beforeRegisterNodeDef(_nodeType, nodeData) {
+  async beforeRegisterNodeDef(
+    _nodeType: typeof LGraphNode,
+    nodeData: ComfyNodeDef
+  ) {
     if ('SaveGLB' === nodeData.name) {
       // @ts-expect-error InputSpec is not typed correctly
       nodeData.input.required.image = ['PREVIEW_3D']
@@ -59,7 +72,7 @@ useExtensionService().registerExtension({
     return createExportMenuItems(load3d)
   },
 
-  async nodeCreated(node) {
+  async nodeCreated(node: LGraphNode) {
     if (node.constructor.comfyClass !== 'SaveGLB') return
 
     const [oldWidth, oldHeight] = node.size
@@ -68,24 +81,71 @@ useExtensionService().registerExtension({
 
     await nextTick()
 
+    useLoad3d(node).waitForLoad3d((load3d) => {
+      if (!load3d) return
+
+      const modelWidget = node.widgets?.find((w) => w.name === 'image')
+      if (!modelWidget) return
+
+      const lastTimeModelFile = node.properties['Last Time Model File'] as
+        | string
+        | undefined
+      const lastTimeModelFolder =
+        (node.properties['Last Time Model Folder'] as
+          | 'input'
+          | 'output'
+          | undefined) ?? 'output'
+
+      if (lastTimeModelFile) {
+        modelWidget.value = lastTimeModelFile
+
+        const config = new Load3DConfiguration(load3d, node.properties)
+
+        config.configureForSaveMesh(lastTimeModelFolder, lastTimeModelFile, {
+          silentOnNotFound: true
+        })
+      }
+    })
+
     const onExecuted = node.onExecuted
 
-    node.onExecuted = function (message: any) {
-      onExecuted?.apply(this, arguments as any)
+    node.onExecuted = function (output: SaveMeshOutput) {
+      onExecuted?.call(this, output)
 
-      const fileInfo = message['3d'][0]
+      const fileInfo = output['3d']?.[0]
+
+      if (!fileInfo) return
 
       useLoad3d(node).waitForLoad3d((load3d) => {
         const modelWidget = node.widgets?.find((w) => w.name === 'image')
 
         if (load3d && modelWidget) {
-          const filePath = fileInfo['subfolder'] + '/' + fileInfo['filename']
+          const filePath =
+            (fileInfo.subfolder ?? '') + '/' + (fileInfo.filename ?? '')
 
           modelWidget.value = filePath
 
           const config = new Load3DConfiguration(load3d, node.properties)
 
-          config.configureForSaveMesh(fileInfo['type'], filePath)
+          const loadFolder = fileInfo.type as 'input' | 'output'
+
+          node.properties['Last Time Model File'] = filePath
+          node.properties['Last Time Model Folder'] = loadFolder
+
+          config.configureForSaveMesh(loadFolder, filePath, {
+            silentOnNotFound: true
+          })
+
+          if (isAssetPreviewSupported()) {
+            const filename = fileInfo.filename ?? ''
+
+            void load3d
+              .whenLoadIdle()
+              .then(() => load3d.captureThumbnail(256, 256))
+              .then((dataUrl) => fetch(dataUrl).then((r) => r.blob()))
+              .then((blob) => persistThumbnail(filename, blob))
+              .catch(() => {})
+          }
         }
       })
     }

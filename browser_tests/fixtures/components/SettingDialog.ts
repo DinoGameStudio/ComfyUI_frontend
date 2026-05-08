@@ -1,20 +1,27 @@
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 
-import type { ComfyPage } from '../ComfyPage'
+import type { ComfyPage } from '@e2e/fixtures/ComfyPage'
+import { TestIds } from '@e2e/fixtures/selectors'
+import { BaseDialog } from '@e2e/fixtures/components/BaseDialog'
 
-export class SettingDialog {
+export class SettingDialog extends BaseDialog {
+  public readonly searchBox: Locator
+  public readonly categories: Locator
+  public readonly contentArea: Locator
+
   constructor(
-    public readonly page: Page,
+    page: Page,
     public readonly comfyPage: ComfyPage
-  ) {}
-
-  get root() {
-    return this.page.locator('div.settings-container')
+  ) {
+    super(page, TestIds.dialogs.settings)
+    this.searchBox = this.root.getByPlaceholder(/Search/)
+    this.categories = this.root.locator('nav').getByRole('button')
+    this.contentArea = this.root.getByRole('main')
   }
 
   async open() {
-    await this.comfyPage.executeCommand('Comfy.ShowSettingsDialog')
-    await this.page.waitForSelector('div.settings-container')
+    await this.comfyPage.command.executeCommand('Comfy.ShowSettingsDialog')
+    await this.waitForVisible()
   }
 
   /**
@@ -23,9 +30,7 @@ export class SettingDialog {
    * @param value - The value to set
    */
   async setStringSetting(id: string, value: string) {
-    const settingInputDiv = this.page.locator(
-      `div.settings-container div[id="${id}"]`
-    )
+    const settingInputDiv = this.root.locator(`div[id="${id}"]`)
     await settingInputDiv.locator('input').fill(value)
   }
 
@@ -34,15 +39,19 @@ export class SettingDialog {
    * @param id - The id of the setting
    */
   async toggleBooleanSetting(id: string) {
-    const settingInputDiv = this.page.locator(
-      `div.settings-container div[id="${id}"]`
-    )
+    const settingInputDiv = this.root.locator(`div[id="${id}"]`)
     await settingInputDiv.locator('input').click()
   }
 
+  category(name: string) {
+    return this.root.locator('nav').getByRole('button', { name })
+  }
+
   async goToAboutPanel() {
-    const aboutButton = this.page.locator('li[aria-label="About"]')
+    const aboutButton = this.root.locator('nav').getByRole('button', {
+      name: 'About'
+    })
     await aboutButton.click()
-    await this.page.waitForSelector('div.about-container')
+    await this.page.locator('.about-container').waitFor()
   }
 }

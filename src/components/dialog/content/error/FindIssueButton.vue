@@ -1,16 +1,18 @@
 <template>
   <Button
-    :label="$t('g.findIssues')"
-    severity="secondary"
-    icon="pi pi-github"
+    data-testid="error-dialog-find-issues"
+    variant="secondary"
     @click="openGitHubIssues"
-  />
+  >
+    <i class="pi pi-github" />
+    {{ $t('g.findIssues') }}
+  </Button>
 </template>
 
 <script setup lang="ts">
-import Button from 'primevue/button'
 import { computed } from 'vue'
 
+import Button from '@/components/ui/button/Button.vue'
 import { useTelemetry } from '@/platform/telemetry'
 
 const props = defineProps<{
@@ -21,10 +23,7 @@ const props = defineProps<{
 
 const queryString = computed(() => props.errorMessage + ' is:issue')
 
-/**
- * Open GitHub issues search and track telemetry.
- */
-const openGitHubIssues = () => {
+function openGitHubIssues() {
   useTelemetry()?.trackUiButtonClicked({
     button_id: 'error_dialog_find_existing_issues_clicked'
   })

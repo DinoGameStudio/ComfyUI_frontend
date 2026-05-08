@@ -1,11 +1,11 @@
 import { expect } from '@playwright/test'
 
-import { userSelectPageFixture as test } from '../fixtures/UserSelectPage'
+import { userSelectPageFixture as test } from '@e2e/fixtures/UserSelectPage'
 
 /**
  * Expects ComfyUI backend to be launched with `--multi-user` flag.
  */
-test.describe('User Select View', () => {
+test.describe('User Select View', { tag: '@settings' }, () => {
   test.beforeEach(async ({ userSelectPage, page }) => {
     await page.goto(userSelectPage.url)
     await page.evaluate(() => {

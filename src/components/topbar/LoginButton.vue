@@ -1,17 +1,20 @@
 <template>
   <Button
     v-if="!isLoggedIn"
-    outlined
-    rounded
-    severity="secondary"
-    class="size-8 bg-secondary-background text-base-foreground hover:bg-secondary-background-hover"
+    data-testid="login-button"
+    variant="textonly"
+    size="icon"
+    :class="cn('group rounded-full p-0 text-base-foreground', className)"
+    :aria-label="t('g.login')"
     @click="handleSignIn()"
     @mouseenter="showPopover"
     @mouseleave="hidePopover"
   >
-    <template #icon>
+    <span
+      class="flex size-full items-center justify-center rounded-full bg-secondary-background transition-colors group-hover:bg-transparent"
+    >
       <i class="icon-[lucide--user] size-4" />
-    </template>
+    </span>
   </Button>
   <Popover
     ref="popoverRef"
@@ -19,9 +22,10 @@
     @mouseout="hidePopover"
     @mouseover="cancelHidePopover"
   >
-    <div>
+    <div data-testid="login-button-popover">
       <div class="mb-1">{{ t('auth.loginButton.tooltipHelp') }}</div>
       <a
+        data-testid="login-button-popover-learn-more"
         :href="apiNodesOverviewUrl"
         target="_blank"
         class="text-neutral-500 hover:text-primary"
@@ -32,14 +36,21 @@
 </template>
 
 <script setup lang="ts">
-import Button from 'primevue/button'
 import Popover from 'primevue/popover'
+import type { HTMLAttributes } from 'vue'
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
+import Button from '@/components/ui/button/Button.vue'
 import { useCurrentUser } from '@/composables/auth/useCurrentUser'
 import { useExternalLink } from '@/composables/useExternalLink'
-import { t } from '@/i18n'
+import { cn } from '@comfyorg/tailwind-utils'
 
+const { class: className } = defineProps<{
+  class?: HTMLAttributes['class']
+}>()
+
+const { t } = useI18n()
 const { isLoggedIn, handleSignIn } = useCurrentUser()
 const { buildDocsUrl } = useExternalLink()
 const apiNodesOverviewUrl = buildDocsUrl(
